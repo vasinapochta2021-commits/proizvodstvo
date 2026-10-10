@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function prof() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function active() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && prof().active == true;
+    }
+    function admin() { return active() && prof().isAdmin == true; }
+    // уровень доступа к блоку: 0 нет, 1 смотреть, 2 править/создавать, 3 удалять
+    function lvl(b) {
+      return active()
+        ? (admin() ? 3 : (('perms' in prof() && b in prof().perms) ? prof().perms[b] : 0))
+        : 0;
+    }
+
+    // Пользователи: читают все активные, меняет только админ.
+    // Свой профиль может прочитать любой вошедший (нужно, чтобы показать «доступ отключён»).
+    match /users/{uid} {
+      allow read: if active() || (request.auth != null && request.auth.uid == uid);
+      allow write: if admin();
+    }
+
+    // Станки: видят все, меняет админ
+    match /machines/{id} {
+      allow read: if active();
+      allow write: if admin();
+    }
+
+    // Каталог: детали и изделия
+    match /parts/{id} {
+      allow read: if lvl('catalog') >= 1;
+      allow create, update: if lvl('catalog') >= 2;
+      allow delete: if lvl('catalog') >= 3;
+    }
+    match /projects/{id} {
+      allow read: if lvl('catalog') >= 1;
+      allow create, update: if lvl('catalog') >= 2;
+      allow delete: if lvl('catalog') >= 3;
+    }
+
+    // Файлы (чертежи): метаданные и куски содержимого
+    match /files/{id} {
+      allow read: if lvl('catalog') >= 1;
+      allow create: if lvl('catalog') >= 2;
+      allow delete: if lvl('catalog') >= 2;
+    }
+    match /filechunks/{id} {
+      allow read: if lvl('catalog') >= 1;
+      allow create: if lvl('catalog') >= 2;
+      allow delete: if lvl('catalog') >= 2;
+    }
+
+    // Запуски и вечерние отчёты — заготовка под следующие части
+    match /launches/{id} {
+      allow read: if lvl('launches') >= 1;
+      allow create, update: if lvl('launches') >= 2;
+      allow delete: if lvl('launches') >= 3;
+    }
+    match /reports/{id} {
+      allow read: if active();
+      allow create, update: if lvl('reports') >= 2;
+      allow delete: if lvl('reports') >= 3;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
