@@ -136,18 +136,19 @@ function viewParts() {
   const q = listQuery.toLowerCase();
   const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
-    <div class="list">${items.map(p => `<a class="item" href="#/part/${p.id}"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">${esc(p.mat || 'материал не указан')} · установов: ${(p.setups || []).length}${p.drawing ? ' · есть чертёж' : ''}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+    <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
+      <div class="s">${esc(p.mat || 'материал не указан')} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
   const items = S.projects.filter(p => !q || (p.art + ' ' + p.name).toLowerCase().includes(q)).sort(byName);
   return `<h1>Изделия</h1>${listBar('Поиск по названию, артикулу', '#/project/new', can('catalog', 2), '+ Изделие')}
-    <div class="list">${items.map(p => `<a class="item" href="#/project/${p.id}"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
+    <div class="list">${items.map(p => `<a class="item hasth" href="#/project/${p.id}">${thumbHTML(projThumb(p))}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
+      <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div></div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
 }
 function fileBlock(meta, key, dis) {
-  return `<div class="file">${meta ? `<span>📎 ${esc(meta.name)}</span><button class="x" data-act="openFile" data-arg="${meta.id}">Открыть</button>${dis ? '' : `<button class="x danger" data-act="rmFile" data-arg="${key}">Убрать</button>`}` : '<span class="muted">нет файла</span>'}</div>`;
+  if (!meta) return '<div class="file"><span class="muted">нет файла</span></div>';
+  return previewHTML(meta) + `<div class="file"><span>📎 ${esc(meta.name)}</span><button class="x" data-act="openFile" data-arg="${meta.id}">В новой вкладке</button>${dis ? '' : `<button class="x danger" data-act="rmFile" data-arg="${key}">Убрать</button>`}</div>`;
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -160,6 +161,9 @@ function viewPart() {
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
+  <div class="card"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
+    ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
+    <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
   <div class="card"><h2>Расчёт заготовки</h2>${calcHTML(p.calc, true)}
     ${dis ? '' : '<button data-act="calcToMat">Записать в «Материал»</button>'}</div>
   <div class="card"><h2>Установы</h2>
@@ -174,9 +178,6 @@ function viewPart() {
   <div class="card"><h2>Слесарные операции</h2>
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Нет.</p>'}
     ${dis ? '' : '<button data-act="addStep">+ Операция</button>'}</div>
-  <div class="card"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
-    ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
-    <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
   ${used.length ? `<div class="card"><h2>Входит в изделия</h2>${used.map(u => `<a href="#/project/${u.id}">${esc(u.name)}</a>`).join('<br>')}</div>` : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
   <div class="bar">${dis ? '' : '<button class="primary" data-act="savePart">Сохранить</button>'}
@@ -190,7 +191,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>` : '<span class="muted">деталь удалена</span>'}</div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>
@@ -236,7 +237,8 @@ function viewTeam() {
 /* ───────── Рендер ───────── */
 const NAV = [['projects', 'Изделия', () => can('catalog', 1)], ['parts', 'Детали', () => can('catalog', 1)],
   ['progress', 'В работе', () => true], ['done', 'Готовые', () => true], ['calc', 'Калькулятор', () => true], ['team', 'Команда', () => S.me && S.me.isAdmin]];
-function render() {
+function render() { renderMain(); setTimeout(hydrate, 0); }
+function renderMain() {
   const top = $('#top'), view = $('#view');
   if (S.me === undefined) return;
   if (!S.me) { top.hidden = true; if (!$('#lg')) view.innerHTML = viewLogin(); return; }
@@ -270,6 +272,135 @@ function render() {
   else view.innerHTML = viewStub('Не найдено', 'Такой страницы нет.');
 }
 
+/* ───────── Показ чертежей ───────── */
+const blobP = new Map(), prevP = new Map(), prevCache = new Map(), pvMeta = {}, thumbDone = new Set();
+const isPdf = m => /pdf/i.test(m.type || '') || /\.pdf$/i.test(m.name || '');
+const isImg = m => /^image\//.test(m.type || '');
+function reg(m) { pvMeta[m.id] = m; return m; }
+function fileBlob(m) {
+  if (!blobP.has(m.id)) blobP.set(m.id, B.getFile(m.id).catch(e => { blobP.delete(m.id); throw e; }));
+  return blobP.get(m.id);
+}
+const PDFJS = ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/'];
+let pdfjsP = null;
+function loadPdfjs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (pdfjsP) return pdfjsP;
+  pdfjsP = (async () => {
+    for (const base of PDFJS) {
+      try {
+        await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = base + 'pdf.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('load')); setTimeout(() => rej(new Error('таймаут')), 8000); document.head.appendChild(sc); });
+        if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; return window.pdfjsLib; }
+      } catch (e) { }
+    }
+    pdfjsP = null; throw new Error('pdf.js недоступен');
+  })();
+  return pdfjsP;
+}
+async function openPdf(blob) { const lib = await loadPdfjs(); return lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise; }
+async function pdfPageCanvas(pdf, n, cssWidth) {
+  const page = await pdf.getPage(n), v1 = page.getViewport({ scale: 1 });
+  const dpr = Math.min(2, window.devicePixelRatio || 1), vp = page.getViewport({ scale: cssWidth / v1.width * dpr });
+  const cv = document.createElement('canvas'); cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+  const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  await page.render({ canvasContext: g, viewport: vp }).promise;
+  return cv;
+}
+async function makeThumb(blob, meta) {
+  try {
+    let src, w, h;
+    if (isImg(meta)) { src = await createImageBitmap(blob); w = src.width; h = src.height; }
+    else if (isPdf(meta)) { src = await pdfPageCanvas(await openPdf(blob), 1, 260); w = src.width; h = src.height; }
+    else return null;
+    const k = Math.min(1, 240 / Math.max(w, h)), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+    const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(src, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/jpeg', 0.6);
+  } catch (e) { return null; }
+}
+function getPreview(meta) {
+  if (!prevP.has(meta.id)) {
+    prevP.set(meta.id, (async () => {
+      const blob = await fileBlob(meta); let url;
+      if (isImg(meta)) url = URL.createObjectURL(blob);
+      else url = (await pdfPageCanvas(await openPdf(blob), 1, 1000)).toDataURL('image/jpeg', 0.85);
+      prevCache.set(meta.id, url);
+      backfillThumb(meta, blob);
+      return url;
+    })().catch(e => { prevP.delete(meta.id); throw e; }));
+  }
+  return prevP.get(meta.id);
+}
+// у чертежей, загруженных раньше, миниатюры нет — дорисовываем и тихо сохраняем
+async function backfillThumb(meta, blob) {
+  if (meta.thumb || thumbDone.has(meta.id) || !can('catalog', 2)) return;
+  thumbDone.add(meta.id);
+  const t = await makeThumb(blob, meta); if (!t) return;
+  meta.thumb = t;
+  for (const [col, list] of [['parts', S.parts], ['projects', S.projects]]) {
+    for (const rec of list) {
+      const n = clone(rec); let hit = false;
+      if (n.drawing && n.drawing.id === meta.id) { n.drawing.thumb = t; hit = true; }
+      (n.files || []).forEach(f => { if (f.id === meta.id) { f.thumb = t; hit = true; } });
+      if (hit) { try { await B.save(col, rec.id, n); } catch (e) { } }
+    }
+  }
+}
+function previewHTML(meta) {
+  reg(meta);
+  const c = prevCache.get(meta.id);
+  if (c) return `<div class="pv ready" data-act="view" data-arg="${meta.id}"><img src="${c}" alt="${esc(meta.name)}"></div>`;
+  if (!isImg(meta) && !isPdf(meta)) return '';
+  return `<div class="pv" data-pv="${meta.id}"><span class="muted">Загружаю чертёж…</span></div>`;
+}
+function thumbHTML(meta, clickable) {
+  if (!meta) return '<span class="thumb none"></span>';
+  reg(meta);
+  const act = clickable ? ` data-act="view" data-arg="${meta.id}"` : '';
+  return meta.thumb ? `<img class="thumb" src="${meta.thumb}" alt=""${act}>` : `<span class="thumb none"${act}>📄</span>`;
+}
+function hydrate() {
+  document.querySelectorAll('[data-pv]:not([data-busy])').forEach(el => {
+    el.dataset.busy = '1'; const meta = pvMeta[el.dataset.pv]; if (!meta) return;
+    getPreview(meta).then(url => {
+      if (!el.isConnected) return;
+      el.classList.add('ready'); el.dataset.act = 'view'; el.dataset.arg = meta.id;
+      el.innerHTML = `<img src="${url}" alt="${esc(meta.name)}">`;
+    }).catch(e => {
+      console.warn('превью чертежа', e);
+      if (el.isConnected) el.innerHTML = '<span class="muted">Не удалось показать чертёж на странице. Нажмите «В новой вкладке».</span>';
+    });
+  });
+}
+function closeViewer() { const v = $('#viewer'); if (v) v.remove(); document.body.classList.remove('noscroll'); }
+async function openViewer(id) {
+  const meta = pvMeta[id]; if (!meta) return;
+  closeViewer();
+  const v = document.createElement('div'); v.id = 'viewer';
+  v.innerHTML = `<div class="vbar"><b>${esc(meta.name)}</b><span class="grow"></span><button class="x" data-act="openFile" data-arg="${meta.id}">В новой вкладке</button><button class="x primary" data-act="vclose">Закрыть</button></div><div class="vbody"><p class="pad" style="color:#fff">Загружаю…</p></div>`;
+  document.body.appendChild(v); document.body.classList.add('noscroll');
+  const body = v.querySelector('.vbody');
+  try {
+    const blob = await fileBlob(meta);
+    if (isImg(meta)) {
+      const url = prevCache.get(meta.id) || URL.createObjectURL(blob);
+      body.innerHTML = `<img src="${url}" alt="">`;
+    } else if (isPdf(meta)) {
+      const pdf = await openPdf(blob); body.innerHTML = '';
+      const w = Math.min(1400, window.innerWidth - 16);
+      for (let n = 1; n <= Math.min(pdf.numPages, 30); n++) {
+        const cv = await pdfPageCanvas(pdf, n, w); if (!v.isConnected) return;
+        cv.className = 'vpage'; body.appendChild(cv);
+      }
+    } else body.innerHTML = '<p class="pad" style="color:#fff">Этот тип файла в приложении не показывается. Нажмите «В новой вкладке».</p>';
+  } catch (e) { console.warn(e); if (v.isConnected) body.innerHTML = '<p class="pad" style="color:#fff">Не удалось показать. Нажмите «В новой вкладке».</p>'; }
+}
+const projThumb = p => {
+  const f = (p.files || []).find(x => x.thumb); if (f) return f;
+  for (const it of (p.items || [])) { const pt = partById(it.partId); if (pt && pt.drawing && pt.drawing.thumb) return pt.drawing; }
+  return (p.files || [])[0] || null;
+};
+
 /* ───────── Файлы ───────── */
 async function shrinkImage(file) {
   if (!/^image\//.test(file.type)) return file;
@@ -293,6 +424,7 @@ async function attach(input) {
     if (kind === 'drawing') { if (draft.drawing) draft._del.push(draft.drawing.id); draft.drawing = meta; }
     else { draft.files = draft.files || []; draft.files.push(meta); }
     toast('Файл загружен'); render();
+    makeThumb(blob, meta).then(t => { if (t) meta.thumb = t; });
   } catch (e) { console.error(e); toast('Не удалось загрузить: ' + (e.message || e)); }
 }
 async function openFile(id) {
@@ -381,6 +513,8 @@ const ACT = {
     render();
   },
   openFile(id) { openFile(id); },
+  view(id) { openViewer(id); },
+  vclose() { closeViewer(); },
   addItem() {
     const v = $('#addPart').value; if (!v) return;
     if (draft.items.some(i => i.partId === v)) return toast('Эта деталь уже в составе');
@@ -454,6 +588,9 @@ async function userChange(t) {
 }
 window.addEventListener('hashchange', () => { listQuery = ''; render(); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'lg' || e.target.id === 'pw')) ACT.login(); });
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+document.addEventListener('click', e => { const im = e.target.closest('#viewer .vbody img'); if (im) im.classList.toggle('full'); });
 
 /* ───────── Запуск ───────── */
 let unsubs = [];

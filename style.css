@@ -72,3 +72,24 @@ button.x{padding:6px 10px;min-height:36px}
   padding:10px 16px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;max-width:90vw}
 #toast.show{opacity:1}
 @media print{#top,.bar,button{display:none!important}}
+
+.item.hasth{display:flex;gap:12px;align-items:center}
+.item .tx{min-width:0}
+.thumb{width:84px;height:60px;object-fit:contain;flex:none;border-radius:6px;border:1px solid var(--line);background:#fff}
+.thumb.none{display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--bg);font-size:20px}
+.pi{display:flex;gap:10px;align-items:center}
+.pi .thumb{width:64px;height:48px;cursor:zoom-in}
+.pv{margin:0 0 8px;border:1px solid var(--line);border-radius:10px;background:#fff;min-height:60px;display:flex;align-items:center;justify-content:center;padding:6px}
+.pv img{max-width:100%;max-height:70vh;display:block}
+.pv.ready{cursor:zoom-in}
+.pv .muted{color:#5f6b76}
+body.noscroll{overflow:hidden}
+#viewer{position:fixed;inset:0;z-index:30;background:#111;display:flex;flex-direction:column}
+#viewer .vbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#222;color:#fff;flex:none}
+#viewer .vbar b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+#viewer .grow{flex:1}
+#viewer .vbody{flex:1;overflow:auto;padding:8px;-webkit-overflow-scrolling:touch}
+#viewer .vbody img{width:100%;height:auto;display:block;margin:0 auto;background:#fff;cursor:zoom-in}
+#viewer .vbody img.full{width:auto;max-width:none;cursor:zoom-out}
+#viewer .vpage{display:block;width:100%;max-width:1400px;height:auto;margin:0 auto 8px;background:#fff}
+@media print{#viewer{display:none}}
