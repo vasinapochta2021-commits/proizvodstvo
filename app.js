@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
-const VER = 'v4';
+const VER = 'v7';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -26,29 +26,84 @@ const S = { me: null, users: [], machines: [], parts: [], projects: [], ready: {
 function can(b, l) { const m = S.me; if (!m) return false; if (m.isAdmin) return true; return ((m.perms || {})[b] || 0) >= l; }
 
 /* ───────── Калькулятор материала ───────── */
-const MATERIALS = [
-  { id: 'steel', name: 'Сталь (конструкционная)', d: 7.85 }, { id: 'inox', name: 'Нержавеющая сталь', d: 7.9 },
-  { id: 'alu', name: 'Алюминий', d: 2.7 }, { id: 'dural', name: 'Дюраль (Д16)', d: 2.78 },
-  { id: 'brass', name: 'Латунь', d: 8.5 }, { id: 'bronze', name: 'Бронза', d: 8.8 },
-  { id: 'copper', name: 'Медь', d: 8.94 }, { id: 'ti', name: 'Титан', d: 4.5 },
-  { id: 'caprolon', name: 'Капролон', d: 1.15 }, { id: 'pom', name: 'Полиацеталь (POM)', d: 1.41 },
-  { id: 'ptfe', name: 'Фторопласт (PTFE)', d: 2.2 }, { id: 'zedex', name: 'Зедекс', d: 1.3 }
+// [id, название, плотность г/см³, другие написания для поиска]
+const MAT_ROWS = [
+  ['steel', 'Сталь (без марки)', 7.85, 'сталь, конструкционная'],
+  ['st10', 'Сталь 10', 7.85, ''], ['st20', 'Сталь 20', 7.85, ''], ['st35', 'Сталь 35', 7.85, ''], ['st45', 'Сталь 45', 7.85, ''],
+  ['st3', 'Ст3', 7.85, 'Сталь 3, Ст3сп'],
+  ['a12', 'Сталь А12', 7.85, 'А12, автоматная'], ['a40g', 'Сталь А40Г', 7.85, 'А40Г'],
+  ['s40h', 'Сталь 40Х', 7.82, '40Х'], ['s40hn', 'Сталь 40ХН', 7.85, '40ХН'],
+  ['s30hgsa', 'Сталь 30ХГСА', 7.85, '30ХГСА'], ['s38h2mua', 'Сталь 38Х2МЮА', 7.7, '38Х2МЮА'],
+  ['s65g', 'Сталь 65Г', 7.85, '65Г'], ['u8', 'Сталь У8', 7.83, 'У8А'], ['u10', 'Сталь У10', 7.81, 'У10А'],
+  ['shh15', 'Сталь ШХ15', 7.81, 'ШХ15'], ['s09g2s', 'Сталь 09Г2С', 7.85, '09Г2С'], ['r6m5', 'Р6М5', 8.1, 'быстрорез'],
+  ['inox', 'Нержавеющая сталь (без марки)', 7.9, 'нерж, нержавейка, нержавеющая'],
+  ['s12h18n10t', '12Х18Н10Т', 7.9, 'AISI 321,AISI321,321'], ['s08h18n10', '08Х18Н10', 7.9, 'AISI 304,AISI304,304'],
+  ['s10h17n13m2t', '10Х17Н13М2Т', 7.95, 'AISI 316,AISI316,316'], ['s20h13', '20Х13', 7.7, ''], ['s40h13', '40Х13', 7.7, ''], ['s14h17n2', '14Х17Н2', 7.75, ''],
+  ['alu', 'Алюминий (без марки)', 2.7, 'алюминий'],
+  ['dural', 'Д16Т', 2.78, 'Д16, дюраль, дюралюминий'], ['ad31', 'АД31', 2.71, ''], ['ad1', 'АД1', 2.71, ''],
+  ['amg6', 'АМг6', 2.64, ''], ['amg3', 'АМг3', 2.67, ''], ['amc', 'АМц', 2.73, ''],
+  ['v95', 'В95', 2.85, 'В95Т1'], ['ak4', 'АК4-1', 2.8, ''], ['ak6', 'АК6', 2.75, ''], ['ak12', 'АК12', 2.65, ''],
+  ['brass', 'Латунь (без марки)', 8.5, 'латунь'], ['l63', 'Латунь Л63', 8.44, 'Л63'], ['ls59', 'Латунь ЛС59-1', 8.5, 'ЛС59-1, ЛС59'],
+  ['bronze', 'Бронза (без марки)', 8.8, 'бронза'], ['braj', 'Бронза БрАЖ9-4', 7.6, 'БрАЖ9-4, БрАЖ'],
+  ['brocs', 'Бронза БрОЦС5-5-5', 8.8, 'БрОЦС5-5-5, БрОЦС'], ['brajmc', 'Бронза БрАЖМц10-3-1,5', 7.6, 'БрАЖМц'],
+  ['brkmc', 'Бронза БрКМц3-1', 8.4, 'БрКМц'], ['copper', 'Медь М1', 8.94, 'медь, М1, М2'],
+  ['ti', 'Титан (без марки)', 4.5, 'титан'], ['vt10', 'Титан ВТ1-0', 4.5, 'ВТ1-0'], ['vt6', 'Титан ВТ6', 4.43, 'ВТ6'],
+  ['caprolon', 'Капролон (ПА6)', 1.15, 'ПА6, нейлон, капролон'], ['pom', 'Полиацеталь POM', 1.41, 'POM, ПОМ, дельрин'],
+  ['ptfe', 'Фторопласт Ф4 (PTFE)', 2.2, 'Ф4, фторопласт, тефлон, PTFE'], ['zedex', 'Зедекс', 1.3, ''],
+  ['textolit', 'Текстолит', 1.35, ''], ['pe', 'Полиэтилен ПНД (HDPE)', 0.95, 'ПЭ, ПНД, HDPE, полиэтилен'],
+  ['pp', 'Полипропилен (PP)', 0.91, 'ПП, полипропилен'], ['pvc', 'ПВХ', 1.4, 'PVC'],
+  ['acryl', 'Оргстекло (акрил)', 1.19, 'акрил, плексиглас, PMMA, оргстекло'], ['abs', 'АБС', 1.05, 'ABS'], ['peek', 'PEEK', 1.31, 'ПЭЭК']
 ];
+// поиск не различает регистр, латиницу/кириллицу похожих букв, знаки и пробелы
+const LK = { a: 'а', b: 'в', c: 'с', e: 'е', h: 'н', k: 'к', m: 'м', o: 'о', p: 'р', t: 'т', x: 'х', y: 'у' };
+const nrm = s => String(s == null ? '' : s).toLowerCase().replace(/ё/g, 'е').replace(/[a-z]/g, ch => LK[ch] || ch).replace(/[^a-zа-я0-9]+/g, ' ').trim();
+const MATERIALS = MAT_ROWS.map(([id, name, d, al]) => ({ id, name, d, k: [name].concat(al ? al.split(',') : []).map(nrm).filter(Boolean) }));
+function matOf(c) {
+  if (c.mat === 'custom') return { id: 'custom', name: c.matName || 'Свой материал', d: num(c.density), k: [] };
+  return MATERIALS.find(x => x.id === c.mat) || MATERIALS[0];
+}
+function findMaterials(q) {
+  const nq = nrm(q).replace(/ /g, '');
+  const score = m => {
+    if (!nq) return 1; let b = 0;
+    for (const k of m.k) {
+      const kk = k.replace(/ /g, '');
+      if (kk.startsWith(nq)) b = Math.max(b, 3);
+      else if (k.split(' ').some(w => w.startsWith(nq))) b = Math.max(b, 2);
+      else if (kk.includes(nq)) b = Math.max(b, 1);
+    }
+    return b;
+  };
+  return MATERIALS.map((m, i) => [score(m), i, m]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[2]).slice(0, 60);
+}
+// какая марка названа в тексте «Сталь А12, круг 25»: побеждает самое длинное совпадение целым словом
+function guessMaterial(text) {
+  const t = ' ' + nrm(text) + ' '; let best = null, bl = 0;
+  for (const m of MATERIALS) for (const k of m.k) {
+    const L = k.replace(/ /g, '').length;
+    if (L < 2 || !t.includes(' ' + k + ' ')) continue;
+    if (L < 3 && t.trim() !== k) continue;
+    const sc = L + (/без марки/.test(m.name) ? 0 : 100);
+    if (sc > bl) { best = m; bl = sc; }
+  }
+  return best;
+}
 const SHAPES = {
   round: { name: 'Круг', dims: [['D', 'Диаметр D, мм', 30]], area: v => Math.PI * v.D * v.D / 4 },
   square: { name: 'Квадрат', dims: [['A', 'Сторона A, мм', 30]], area: v => v.A * v.A },
   hex: { name: 'Шестигранник', dims: [['S', 'Под ключ S, мм', 27]], area: v => v.S * v.S * Math.sqrt(3) / 2 },
   tube: { name: 'Труба', dims: [['D', 'Наружный D, мм', 40], ['T', 'Стенка T, мм', 5]], area: v => Math.PI / 4 * (v.D * v.D - Math.pow(v.D - 2 * v.T, 2)) },
   strip: { name: 'Полоса / лист', dims: [['W', 'Ширина W, мм', 50], ['T', 'Толщина T, мм', 10]], area: v => v.W * v.T },
+  angle: { name: 'Уголок', dims: [['A', 'Полка A, мм', 25], ['B', 'Полка B, мм', 25], ['T', 'Толщина T, мм', 4]], area: v => v.T * (v.A + v.B - v.T) },
   profile: { name: 'Профильная труба', dims: [['A', 'Сторона A, мм', 40], ['B', 'Сторона B, мм', 40], ['T', 'Стенка T, мм', 3]], area: v => v.A * v.B - (v.A - 2 * v.T) * (v.B - 2 * v.T) }
 };
 function defaultDims(shape) { const o = {}; SHAPES[shape].dims.forEach(([k, , d]) => o[k] = String(d)); return o; }
-function defaultCalc() { return { mat: 'steel', shape: 'round', dims: defaultDims('round'), qty: '1', spare: '0', len: '100', kerf: '3', face: '1', tail: '0', bar: '' }; }
+function defaultCalc() { return { mat: 'steel', matUser: false, shape: 'round', dims: defaultDims('round'), qty: '1', spare: '0', len: '100', kerf: '3', face: '1', tail: '0', bar: '' }; }
 function calc(c) {
   const sh = SHAPES[c.shape] || SHAPES.round, dv = {};
   sh.dims.forEach(([k]) => dv[k] = num((c.dims || {})[k]));
   const area = Math.max(0, sh.area(dv));
-  const m = MATERIALS.find(x => x.id === c.mat) || MATERIALS[0];
+  const m = matOf(c);
   const qty = num(c.qty), spare = num(c.spare), len = num(c.len), kerf = num(c.kerf), face = num(c.face), tail = num(c.tail), bar = num(c.bar);
   const pieces = qty + spare, pieceLen = len + kerf + face, totalMm = pieces * pieceLen + tail;
   const out = { area, pieces, pieceLen, totalMm, massKg: area * totalMm / 1e6 * m.d, kgPerM: area / 1000 * m.d, pieceMass: area * pieceLen / 1e6 * m.d, mat: m, shape: sh };
@@ -63,9 +118,11 @@ function calcResultHTML(c, emb) {
   const r = calc(c);
   if (emb) {
     return `<div class="big">${fmt(r.pieceLen, 1)} мм · ${fmt(r.pieceMass, 3)} кг</div>
-      <div class="muted">длина заготовки на 1 деталь (деталь + рез + торцовка) и её масса; ${fmt(r.kgPerM, 3)} кг/м</div>`;
+      <div class="muted">длина заготовки на 1 деталь (деталь + рез + торцовка) и её масса; ${fmt(r.kgPerM, 3)} кг/м</div>
+      <div class="muted">${esc(r.mat.name)} · ${r.mat.d > 0 ? fmt(r.mat.d, 2) + ' г/см³' : 'укажите плотность'}</div>`;
   }
   let h = `<div class="big">${fmt(r.massKg, 2)} кг · ${fmt(r.totalMm / 1000, 3)} м</div><dl>
+    <dt>Материал</dt><dd>${esc(r.mat.name)} · ${r.mat.d > 0 ? fmt(r.mat.d, 2) + ' г/см³' : 'укажите плотность'}</dd>
     <dt>Заготовок</dt><dd>${fmt(r.pieces, 0)} шт по ${fmt(r.pieceLen, 1)} мм</dd>
     <dt>Общая длина</dt><dd>${fmt(r.totalMm, 1)} мм</dd>
     <dt>Масса 1 заготовки</dt><dd>${fmt(r.pieceMass, 3)} кг</dd>
@@ -83,9 +140,10 @@ function calcHTML(c, emb) {
   const sh = SHAPES[c.shape];
   return `<div class="calc">
     <div class="row">
-      <label>Материал<select data-bind="calc.mat">${MATERIALS.map(m => `<option value="${m.id}"${m.id === c.mat ? ' selected' : ''}>${esc(m.name)} · ${m.d}</option>`).join('')}</select></label>
+      <div class="cb"><label>Материал (вводите первые буквы)<input class="cb-in" autocomplete="off" spellcheck="false" placeholder="А12, 40Х, Д16, нерж…" value="${esc(matOf(c).name)}"></label><div class="cb-list" hidden></div></div>
       <label>Сечение<select data-bind="calc.shape" data-re="1">${Object.keys(SHAPES).map(k => `<option value="${k}"${k === c.shape ? ' selected' : ''}>${SHAPES[k].name}</option>`).join('')}</select></label>
     </div>
+    ${c.mat === 'custom' ? `<div class="row">${f('Плотность «' + esc(c.matName) + '», г/см³', 'calc.density', c.density)}</div>` : ''}
     <div class="row">${sh.dims.map(([k, label]) => f(label, 'calc.dims.' + k, (c.dims || {})[k])).join('')}</div>
     <div class="row">
       ${emb ? '' : f('Деталей, шт', 'calc.qty', c.qty) + f('Запас, шт', 'calc.spare', c.spare)}
@@ -104,6 +162,7 @@ function calcSummary(c) {
 
 /* ───────── Состояние страницы, черновик ───────── */
 let draft = null, draftKey = null, calcState = defaultCalc(), formErr = '';
+function refreshCalc() { if (draft && draft.calc) document.querySelectorAll('[data-calcres]').forEach(el => el.innerHTML = calcResultHTML(draft.calc, el.dataset.calcres === '1')); }
 function getPath(o, p) { return p.split('.').reduce((a, k) => (a == null ? a : a[k]), o); }
 function setPath(o, p, v) { const ks = p.split('.'); const last = ks.pop(); const t = ks.reduce((a, k) => (a[k] == null ? (a[k] = {}) : a[k]), o); t[last] = v; }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -160,13 +219,14 @@ function viewPart() {
     <div class="row"><label>Артикул<input data-bind="art" value="${esc(p.art)}" ${dis}></label>
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div>
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
+    <label>Покрытие / доп. обработка<input data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, воронение…" ${dis}></label>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
   <div class="card"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
     ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
     <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
   <div class="card"><h2>Расчёт заготовки</h2>${calcHTML(p.calc, true)}
-    ${dis ? '' : '<button data-act="calcToMat">Записать в «Материал»</button>'}</div>
+    ${dis ? '' : '<button data-act="calcToMat">Записать расчёт в поле «Материал»</button>'}</div>
   <div class="card"><h2>Установы</h2>
     ${(p.setups || []).map((s, i) => `<div class="setup">
       <label>Станок<select data-bind="setups.${i}.machine" ${dis}><option value="">—</option>${machines.map(m => `<option value="${m.id}"${m.id === s.machine ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
@@ -257,6 +317,7 @@ function renderMain() {
       if (id === 'new') rec = isPart ? { art: '', name: '', mat: '', note: '', calc: Object.assign(defaultCalc(), { qty: '1', spare: '0' }), setups: [], steps: [], drawing: null }
         : { art: '', name: '', note: '', items: [], files: [] };
       else { const src = isPart ? S.parts : S.projects; const f = src.find(x => x.id === id); if (!f) { view.innerHTML = S.ready[isPart ? 'parts' : 'projects'] ? viewStub('Не найдено', 'Такой записи нет.') : '<p class="muted pad">Загрузка…</p>'; return; } rec = clone(f); if (isPart) { rec.calc = rec.calc || defaultCalc(); rec.setups = rec.setups || []; rec.steps = rec.steps || []; } else { rec.items = rec.items || []; rec.files = rec.files || []; } }
+      if (isPart && rec.calc && !rec.calc.matUser) { const g = guessMaterial(rec.mat); if (g) rec.calc.mat = g.id; }
       draft = rec; draft._del = []; draftKey = key; formErr = '';
       if (id !== 'new') draft.id = id;
     }
@@ -283,9 +344,10 @@ function fileBlob(m) {
   return blobP.get(m.id);
 }
 const PDFJS = ['pdfjs/', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/'];
-let pdfjsP = null;
+let pdfjsP = null, pdfjsDead = false;
 function loadPdfjs() {
   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (pdfjsDead) return Promise.reject(new Error('pdf.js недоступен'));
   if (pdfjsP) return pdfjsP;
   pdfjsP = (async () => {
     for (const base of PDFJS) {
@@ -294,7 +356,7 @@ function loadPdfjs() {
         if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js'; return window.pdfjsLib; }
       } catch (e) { }
     }
-    pdfjsP = null; throw new Error('pdf.js недоступен');
+    pdfjsP = null; pdfjsDead = true; throw new Error('pdf.js недоступен');
   })();
   return pdfjsP;
 }
@@ -347,8 +409,15 @@ async function backfillThumb(meta, blob) {
     }
   }
 }
+const frameUrl = new Map();
+async function pdfFrame(meta) {
+  if (!frameUrl.has(meta.id)) frameUrl.set(meta.id, URL.createObjectURL(await fileBlob(meta)));
+  return frameUrl.get(meta.id);
+}
+const frameHTML = url => `<iframe class="pvframe" src="${url}"></iframe>`;
 function previewHTML(meta) {
   reg(meta);
+  if (frameUrl.has(meta.id)) return `<div class="pv framed">${frameHTML(frameUrl.get(meta.id))}</div>`;
   const c = prevCache.get(meta.id);
   if (c) return `<div class="pv ready" data-act="view" data-arg="${meta.id}"><img src="${c}" alt="${esc(meta.name)}"></div>`;
   if (!isImg(meta) && !isPdf(meta)) return '';
@@ -373,8 +442,11 @@ function hydrate() {
       if (!el.isConnected) return;
       el.classList.add('ready'); el.dataset.act = 'view'; el.dataset.arg = meta.id;
       el.innerHTML = `<img src="${url}" alt="${esc(meta.name)}">`;
-    }).catch(e => {
+    }).catch(async e => {
       console.warn('превью чертежа', e);
+      if (isPdf(meta)) {
+        try { const u = await pdfFrame(meta); if (el.isConnected) { el.classList.add('framed'); el.innerHTML = frameHTML(u); } return; } catch (e2) { e = e2; }
+      }
       if (el.isConnected) el.innerHTML = '<span class="muted">Не удалось показать чертёж: ' + esc((e && e.message) || e) + '. Нажмите «В новой вкладке».</span>';
     });
   });
@@ -393,7 +465,11 @@ async function openViewer(id) {
       const url = prevCache.get(meta.id) || URL.createObjectURL(blob);
       body.innerHTML = `<img src="${url}" alt="">`;
     } else if (isPdf(meta)) {
-      const pdf = await openPdf(blob); body.innerHTML = '';
+      let pdf;
+      try { pdf = await openPdf(blob); } catch (e0) {
+        const u = await pdfFrame(meta); body.innerHTML = `<iframe class="vframe" src="${u}"></iframe>`; return;
+      }
+      body.innerHTML = '';
       const w = Math.min(1400, window.innerWidth - 16);
       for (let n = 1; n <= Math.min(pdf.numPages, 30); n++) {
         const cv = await pdfPageCanvas(pdf, n, w); if (!v.isConnected) return;
@@ -422,6 +498,56 @@ async function shrinkImage(file) {
     return blob || file;
   } catch (e) { return file; }
 }
+
+/* ───────── Чтение основной надписи чертежа ───────── */
+function parseTitle(text) {
+  const t = String(text || '').replace(/\s+/g, ' ');
+  const clean = v => (v || '').replace(/_{2,}/g, ' ').replace(/\s+/g, ' ').replace(/^[\s,;:.\-]+|[\s,;:]+$/g, '');
+  const take = (re) => { const m = t.match(re); return m ? clean(m[1]).slice(0, 80) : ''; };
+  const stop = '(?=\\s*(?:МАТЕРИАЛ|ЗАГОТОВКА|ДОП\\.?\\s*ОБРАБОТКА|ПОКРЫТИЕ|ПРИМЕЧАНИЕ|S\\s*=|У6|ДЕТАЛЬ|ЛИСТ\\s*:|КОЛ-ВО|АРТ(?=\\s|$)|Н\\.?\\s*контр|Лит\\.|Масса)|\\s*$)';
+  const mat = take(new RegExp('МАТЕРИАЛ\\s*:\\s*(.*?)' + stop, 'i'));
+  const blank = take(new RegExp('ЗАГОТОВКА\\s*:\\s*(.*?)' + stop, 'i'));
+  const dop = take(new RegExp('ДОП\\.?\\s*ОБРАБОТКА\\s*:\\s*(.*?)' + stop, 'i'));
+  const cp = take(new RegExp('ПОКРЫТИЕ\\s*:\\s*(.*?)' + stop, 'i'));
+  const coat = [dop, cp].filter(Boolean).join(', ');
+  return { mat, blank, coat };
+}
+function blankShape(b) {
+  const x = String(b || '').toLowerCase().replace(/[хx×*]/g, 'х').replace(/,/g, '.');
+  let m;
+  if ((m = x.match(/(?:^|[^а-я])(?:ш|шестигр\S*)\s*(\d+(?:\.\d+)?)/))) return { shape: 'hex', dims: { S: m[1] } };
+  if ((m = x.match(/^\s*(?:ш)(\d+)/))) return { shape: 'hex', dims: { S: m[1] } };
+  if ((m = x.match(/труб\S*[^\d]*(\d+(?:\.\d+)?)\s*х\s*(\d+(?:\.\d+)?)/))) return { shape: 'tube', dims: { D: m[1], T: m[2] } };
+  if ((m = x.match(/круг\S*\s*(\d+(?:\.\d+)?)/))) return { shape: 'round', dims: { D: m[1] } };
+  if ((m = x.match(/угол\S*\s*(\d+(?:\.\d+)?)\s*х\s*(\d+(?:\.\d+)?)\s*х\s*(\d+(?:\.\d+)?)/))) return { shape: 'angle', dims: { A: m[1], B: m[2], T: m[3] } };
+  if ((m = x.match(/квадрат\S*\s*(\d+(?:\.\d+)?)/))) return { shape: 'square', dims: { A: m[1] } };
+  return null;
+}
+async function readTitleBlock(blob) {
+  const pdf = await openPdf(blob); let all = '';
+  for (let n = 1; n <= Math.min(pdf.numPages, 3); n++) {
+    const pg = await pdf.getPage(n), tc = await pg.getTextContent();
+    all += ' ' + tc.items.map(i => i.str).join(' ');
+    const r = parseTitle(all); if (r.mat || r.blank) break;
+  }
+  return parseTitle(all);
+}
+async function autoFillFromDrawing(blob) {
+  try {
+    if (!draft || draft.mat === undefined || !isPdf(blob)) return;
+    const d0 = draft, r = await readTitleBlock(blob);
+    if (draft !== d0 || (!r.mat && !r.blank && !r.coat)) return;
+    const got = [];
+    if (!String(draft.mat || '').trim() && (r.mat || r.blank)) {
+      draft.mat = [r.mat, r.blank].filter(Boolean).join(', '); got.push('материал'); 
+      if (draft.calc && !draft.calc.matUser) { const g = guessMaterial(r.mat); if (g) draft.calc.mat = g.id; }
+      const sh = draft.calc && blankShape(r.blank);
+      if (sh) { draft.calc.shape = sh.shape; draft.calc.dims = Object.assign(defaultDims(sh.shape), sh.dims); got.push('заготовка'); }
+    }
+    if (!String(draft.coat || '').trim() && r.coat) { draft.coat = r.coat; got.push('покрытие'); }
+    if (got.length) { toast('Из чертежа подставлено: ' + got.join(', ')); render(); }
+  } catch (e) { console.warn('title block', e); }
+}
 async function attach(input) {
   const file = input.files && input.files[0]; if (!file || !draft) return;
   const kind = input.dataset.file;
@@ -434,6 +560,7 @@ async function attach(input) {
     else { draft.files = draft.files || []; draft.files.push(meta); }
     toast('Файл загружен'); render();
     makeThumb(blob, meta).then(t => { if (t) meta.thumb = t; });
+    if (kind === 'drawing') autoFillFromDrawing(blob);
   } catch (e) { console.error(e); toast('Не удалось загрузить: ' + (e.message || e)); }
 }
 async function openFile(id) {
@@ -508,7 +635,12 @@ const ACT = {
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
   addStep() { draft.steps.push(''); render(); },
   delStep(i) { draft.steps.splice(i, 1); render(); },
-  calcToMat() { const c = draft.calc, r = calc(c); draft.mat = `${r.mat.name}, ${r.shape.name} ${dimsText(c)}`; render(); toast('Записано в «Материал»'); },
+  calcToMat() {
+    const c = draft.calc, r = calc(c), t = `${r.mat.name}, ${r.shape.name} ${dimsText(c)}`;
+    const cur = (draft.mat || '').trim();
+    if (cur && cur !== t && !confirm('Заменить текст в поле «Материал»?\n\nСейчас: ' + cur + '\nБудет: ' + t)) return;
+    draft.mat = t; render(); toast('Записано в «Материал»');
+  },
   savePart, delPart: async () => {
     if (!confirm('Удалить деталь «' + draft.name + '»?')) return;
     const used = S.projects.filter(pr => (pr.items || []).some(i => i.partId === draft.id));
@@ -576,7 +708,11 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { listQuery = t.value; const pos = t.selectionStart; render(); const q = $('#q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } return; }
   const p = t.dataset && t.dataset.bind; if (!p || !draft) return;
   setPath(draft, p, t.type === 'checkbox' ? t.checked : t.value);
-  if (p.startsWith('calc.')) document.querySelectorAll('[data-calcres]').forEach(el => el.innerHTML = calcResultHTML(draft.calc, el.dataset.calcres === '1'));
+  if (p.startsWith('calc.')) refreshCalc();
+  if (p === 'mat' && draft.calc && !draft.calc.matUser) {
+    const g = guessMaterial(draft.mat);
+    if (g && g.id !== draft.calc.mat) { draft.calc.mat = g.id; const ci = document.querySelector('.cb-in'); if (ci) ci.value = g.name; refreshCalc(); }
+  }
 });
 document.addEventListener('change', e => {
   const t = e.target;
@@ -599,6 +735,40 @@ window.addEventListener('hashchange', () => { listQuery = ''; render(); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'lg' || e.target.id === 'pw')) ACT.login(); });
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeViewer(); });
+
+/* ───────── Выбор материала вводом первых букв ───────── */
+function cbShow(box, q) {
+  const list = box.querySelector('.cb-list'), items = findMaterials(q), nq = nrm(q);
+  let h = items.map(m => `<div class="cb-opt" data-id="${m.id}"><span>${esc(m.name)}</span><small>${m.d} г/см³</small></div>`).join('');
+  if (q.trim() && !items.some(m => nrm(m.name) === nq)) h += `<div class="cb-opt cb-custom" data-id="custom" data-name="${esc(q.trim())}"><span>Свой материал: «${esc(q.trim())}»</span><small>указать плотность</small></div>`;
+  list.innerHTML = h || '<div class="cb-empty">Ничего не найдено</div>'; list.hidden = false;
+}
+function cbPick(box, opt) {
+  if (!opt || !draft || !draft.calc) return;
+  draft.calc.matUser = true;
+  if (opt.dataset.id === 'custom') { draft.calc.mat = 'custom'; draft.calc.matName = opt.dataset.name; if (draft.calc.density == null) draft.calc.density = ''; render(); return; }
+  draft.calc.mat = opt.dataset.id;
+  box.querySelector('.cb-in').value = matOf(draft.calc).name; box.querySelector('.cb-list').hidden = true; refreshCalc();
+}
+document.addEventListener('focusin', e => { const t = e.target; if (t.classList && t.classList.contains('cb-in')) { t.select(); cbShow(t.closest('.cb'), ''); } });
+document.addEventListener('input', e => { const t = e.target; if (t.classList && t.classList.contains('cb-in')) cbShow(t.closest('.cb'), t.value); });
+document.addEventListener('mousedown', e => { const o = e.target.closest('.cb-opt'); if (o) { e.preventDefault(); cbPick(o.closest('.cb'), o); } });
+document.addEventListener('focusout', e => {
+  const t = e.target; if (!t.classList || !t.classList.contains('cb-in')) return;
+  setTimeout(() => { const box = t.closest('.cb'); if (!box) return; box.querySelector('.cb-list').hidden = true; if (draft && draft.calc) t.value = matOf(draft.calc).name; }, 120);
+});
+document.addEventListener('keydown', e => {
+  const t = e.target; if (!t.classList || !t.classList.contains('cb-in')) return;
+  const box = t.closest('.cb'), list = box.querySelector('.cb-list'), opts = [...list.querySelectorAll('.cb-opt')];
+  let i = opts.findIndex(o => o.classList.contains('on'));
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); if (list.hidden) cbShow(box, t.value);
+    const os = [...list.querySelectorAll('.cb-opt')]; if (!os.length) return;
+    i = e.key === 'ArrowDown' ? Math.min(os.length - 1, i + 1) : Math.max(0, i - 1);
+    os.forEach(o => o.classList.remove('on')); os[i].classList.add('on'); os[i].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') { e.preventDefault(); cbPick(box, opts[i >= 0 ? i : 0]); }
+  else if (e.key === 'Escape') { list.hidden = true; }
+});
 document.addEventListener('click', e => { const im = e.target.closest('#viewer .vbody img'); if (im) im.classList.toggle('full'); });
 
 /* ───────── Запуск ───────── */
