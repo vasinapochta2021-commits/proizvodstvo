@@ -129,3 +129,7 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .list .item .thumb{width:200px;height:140px;flex:none}
 .list .item .tx{flex:1}
 @media(max-width:560px){.list .item .thumb{width:110px;height:80px}}
+
+.setup{grid-template-columns:130px 1fr 1fr 90px 1fr auto}
+.setup .sh{grid-column:1/-1;font-weight:600}
+@media(max-width:700px){.setup{grid-template-columns:1fr 1fr}.setup .sh{grid-column:span 2}}

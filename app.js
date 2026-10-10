@@ -18,6 +18,8 @@ const TPL = {
   accountant: { name: 'Бухгалтер', perms: { catalog: 0, launches: 1, reports: 0, prices: 1 } },
   viewer: { name: 'Только просмотр', perms: { catalog: 1, launches: 1, reports: 1, prices: 0 } }
 };
+const SETUP_TYPES = ['токарный', 'фрезерный'];
+const guessType = name => /фрез|mill/i.test(name) ? 'фрезерный' : /токар|lathe|tc\s?\d|nexsus|ck-?\d/i.test(name) ? 'токарный' : '';
 const SEED_MACHINES = ['Metalltec TC45', 'Metalltec Nexsus 55 (приводной инструмент, ось C)', 'Metalltec CK-36',
   'Китайский токарный станок', 'Фрезерный станок ЧПУ', 'Токарный 16К20', 'Токарный ИЖ',
   'Фрезерный универсальный (малый)', 'Фрезерный универсальный (большой)'];
@@ -223,13 +225,19 @@ function workLines(p) {
   return `<div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : '<span class="muted">слесарка: не указана</span>'}</div>`
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
 }
+function setupsLine(p) {
+  const st = p.setups || [];
+  if (!st.length) return 'сетапов на станках: нет';
+  const tm = x => { const t = String(x == null ? '' : x).trim(); return t ? esc(t) + ' мин' : 'время не указано'; };
+  return 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
+}
 function partLines(p) {
   const w = partWork(p), bits = [];
   let m = esc(p.mat || 'материал не указан');
   if (p.calc && !p.bought) { const r = calc(p.calc); if (r.pieceLen > 0) m += ` · длина заготовки ${fmt(r.pieceLen, 0)} мм`; }
   if (p.bought) m = 'покупная заготовка: ' + m;
   return `<div class="s">${m}</div>
-    <div class="s">установов на станках: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
+    <div class="s">${setupsLine(p)}${p.drawing ? '' : ' · нет чертежа'}</div>
     <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
 }
@@ -254,15 +262,18 @@ function viewPart() {
   </div>
   <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="muted">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
     ${dis ? '' : '<button data-act="calcToMat">Записать расчёт в поле «Материал»</button>'}</div>
-  <div class="card"><h2>Установы</h2>
+  <div class="card"><h2>Сетапы</h2>
+    ${!machines.length ? `<div class="warn">Список станков пуст, поэтому в поле «Станок» нечего выбирать. ${S.me && S.me.isAdmin ? '<button class="link" data-act="seedMachines">Заполнить стандартным списком станков</button>' : 'Попросите администратора заполнить список во вкладке «Команда».'}</div>` : ''}
     ${(p.setups || []).map((s, i) => `<div class="setup">
+      <div class="sh">Сетап ${i + 1}${s.type ? ' · ' + esc(s.type) : ''}</div>
+      <label>Тип<select data-bind="setups.${i}.type" ${dis}><option value="">—</option>${SETUP_TYPES.map(t => `<option${t === s.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <label>Станок<select data-bind="setups.${i}.machine" ${dis}><option value="">—</option>${machines.map(m => `<option value="${m.id}"${m.id === s.machine ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
       <div class="pg"><label>Программа<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
       <label>Время, мин<input inputmode="decimal" data-bind="setups.${i}.time" value="${esc(s.time)}" ${dis}></label>
       <label>Заметка<input data-bind="setups.${i}.note" value="${esc(s.note)}" ${dis}></label>
-      ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Установов нет.</p>'}
-    ${dis ? '' : '<button data-act="addSetup">+ Установ</button>'}
-    <p class="muted">Время на одну деталь по машинному таймеру. Изменили режимы — поправьте здесь, прошлые цифры пересчитаются.</p></div>
+      ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
+    ${dis ? '' : '<button data-act="addSetup">+ Сетап</button>'}
+    <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную; позже оно будет обновляться из отчётов операторов.</p></div>
   <div class="card"><h2>Слесарные операции</h2>
     <p class="muted">Прогнать резьбу, пескоструйка, снять заусенцы и т. п. Покрытия (оксидирование, краска, анодирование) — не здесь, а в поле «Покрытие» вверху.</p>
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
@@ -686,7 +697,7 @@ const ACT = {
     lines.push('Онлайн: ' + navigator.onLine); out.textContent = lines.join('\n');
   },
   async logout() { S.me = null; await B.logout(); },
-  addSetup() { draft.setups.push({ machine: '', program: '', time: '', note: '' }); render(); },
+  addSetup() { draft.setups.push({ type: '', machine: '', program: '', time: '', note: '' }); render(); },
   delSetup(i) { draft.setups.splice(i, 1); render(); },
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
   addStep() { draft.steps.push(''); render(); },
@@ -775,6 +786,11 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.file) return attach(t);
+  if (t.dataset.bind && /^setups\.\d+\.machine$/.test(t.dataset.bind) && draft) {
+    const i = +t.dataset.bind.split('.')[1], st = draft.setups[i], m = S.machines.find(x => x.id === t.value);
+    if (st && m && !st.type) { const g = guessType(m.name); if (g) { st.type = g; render(); return; } }
+  }
+  if (t.dataset.bind === 'bought' && draft) { render(); return; }
   if (t.dataset.bind === 'calc.shape' && draft) { draft.calc.dims = defaultDims(t.value); render(); return; }
   if (t.dataset.bind && t.dataset.bind.startsWith('steps.') && draft && isCoatName(t.value)) { render(); return; }
   if (t.dataset.u) return userChange(t);
@@ -862,7 +878,7 @@ function startWatch() {
   stopWatch();
   const w = (col, key, need) => {
     if (!need) { S[key] = []; S.ready[key] = true; return; }
-    unsubs.push(B.watch(col, rows => { S[key] = rows; S.ready[key] = true; if (draft && draftKey === location.hash) return; render(); }, () => { S[key] = []; S.ready[key] = true; render(); }));
+    unsubs.push(B.watch(col, rows => { S[key] = rows; S.ready[key] = true; if (draft && draftKey === location.hash && key !== 'machines') return; render(); }, () => { S[key] = []; S.ready[key] = true; render(); }));
   };
   w('users', 'users', true); w('machines', 'machines', true);
   w('parts', 'parts', can('catalog', 1)); w('projects', 'projects', can('catalog', 1));
