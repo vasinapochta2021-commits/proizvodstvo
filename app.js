@@ -245,7 +245,7 @@ function partLines(p) {
     <div class="s">${setupsLine(p)}${p.drawing ? '' : ' · нет чертежа'}</div>
     <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '')
-    + (String(p.note || '').trim() ? `<div class="s">примечание: ${clip(String(p.note).replace(/\s+/g, ' ').trim(), 140)}</div>` : '');
+    + (String(p.note || '').trim() ? `<div class="s${p.notePri === 'high' ? ' s-high' : ''}">${p.notePri === 'high' ? '⚠ ' : ''}примечание: ${clip(String(p.note).replace(/\s+/g, ' ').trim(), 140)}</div>` : '');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -265,7 +265,9 @@ function viewPart() {
     <p class="muted chk-h">Болт, штифт и т. п., которые дорабатываем: время считается, пруток не нужен. Какая именно — напишите в поле «Материал», например: болт DIN 933 М20×100.</p>
     <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
 
-    <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
+    <div class="note-block${p.notePri === 'high' ? ' note-high' : p.notePri === 'normal' ? ' note-normal' : ''}">
+    <div class="note-hdr"><label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
+    <label>Приоритет<select data-bind="notePri" ${dis}><option value="">—</option><option value="normal"${p.notePri === 'normal' ? ' selected' : ''}>Обычная</option><option value="high"${p.notePri === 'high' ? ' selected' : ''}>⚠ Важная</option></select></label></div></div>
   </div>
   </div>
   <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="warn">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
@@ -799,7 +801,7 @@ document.addEventListener('change', e => {
     const i = +t.dataset.bind.split('.')[1], st = draft.setups[i], m = S.machines.find(x => x.id === t.value);
     if (st && m && !st.type) { const g = guessType(m.name); if (g) { st.type = g; render(); return; } }
   }
-  if (t.dataset.bind === 'bought' && draft) { render(); return; }
+  if ((t.dataset.bind === 'bought' || t.dataset.bind === 'notePri') && draft) { render(); return; }
   if (t.dataset.bind === 'calc.shape' && draft) { draft.calc.dims = defaultDims(t.value); render(); return; }
   if (t.dataset.bind && t.dataset.bind.startsWith('steps.') && draft && isCoatName(t.value)) { render(); return; }
   if (t.dataset.u) return userChange(t);
