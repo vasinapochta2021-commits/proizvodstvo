@@ -118,7 +118,8 @@ function viewLogin(err) {
     <label>Пароль<input id="pw" type="password" autocomplete="current-password"></label>
     ${err ? `<div class="err">${esc(err)}</div>` : ''}
     <button class="primary" data-act="login">Войти</button>
-    <p class="muted">Учётную запись выдаёт администратор.</p></div>`;
+    <p class="muted">Учётную запись выдаёт администратор.</p>
+    <p><button class="link" data-act="diag">Проверить связь с Google</button></p><pre id="diag" class="muted" style="white-space:pre-wrap;font-size:12px"></pre></div>`;
 }
 function viewNoProfile() {
   const m = S.me;
@@ -342,11 +343,23 @@ const ACT = {
       const c = e && e.code || '';
       const m = ['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-email'].includes(c) ? 'Неверный логин или пароль'
         : c === 'auth/operation-not-allowed' ? 'В Firebase не включён вход по Email/Password'
-        : c === 'auth/network-request-failed' ? 'Нет связи с Firebase'
+        : c === 'auth/network-request-failed' ? 'Нет связи с Firebase (' + c + '). Нажмите «Проверить связь с Google» ниже.'
         : c === 'auth/too-many-requests' ? 'Слишком много попыток, подождите несколько минут'
         : 'Ошибка входа: ' + (c || (e && e.message) || e);
       $('#view').innerHTML = viewLogin(m);
     }
+  },
+  async diag() {
+    const out = $('#diag'); out.textContent = 'Проверяю…';
+    const hosts = ['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firestore.googleapis.com', 'www.googleapis.com', 'www.gstatic.com', 'firebaseapp.com'];
+    const lines = [];
+    for (const h of hosts) {
+      const t = Date.now();
+      try { await Promise.race([fetch('https://' + h + '/', { mode: 'no-cors', cache: 'no-store' }), new Promise((_, rj) => setTimeout(() => rj(new Error('таймаут 10 с')), 10000))]); lines.push('✓ ' + h + ' (' + (Date.now() - t) + ' мс)'); }
+      catch (e) { lines.push('✗ ' + h + ' — ' + (e.message || e)); }
+      out.textContent = lines.join('\n');
+    }
+    lines.push('Онлайн: ' + navigator.onLine); out.textContent = lines.join('\n');
   },
   async logout() { S.me = null; await B.logout(); },
   addSetup() { draft.setups.push({ machine: '', program: '', time: '', note: '' }); render(); },
