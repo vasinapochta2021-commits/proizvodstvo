@@ -338,7 +338,15 @@ const ACT = {
   async login() {
     const l = $('#lg').value, p = $('#pw').value;
     if (!l || !p) return;
-    try { await B.login(l, p); } catch (e) { $('#view').innerHTML = viewLogin('Неверный логин или пароль'); }
+    try { await B.login(l, p); } catch (e) {
+      const c = e && e.code || '';
+      const m = ['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-email'].includes(c) ? 'Неверный логин или пароль'
+        : c === 'auth/operation-not-allowed' ? 'В Firebase не включён вход по Email/Password'
+        : c === 'auth/network-request-failed' ? 'Нет связи с Firebase'
+        : c === 'auth/too-many-requests' ? 'Слишком много попыток, подождите несколько минут'
+        : 'Ошибка входа: ' + (c || (e && e.message) || e);
+      $('#view').innerHTML = viewLogin(m);
+    }
   },
   async logout() { S.me = null; await B.logout(); },
   addSetup() { draft.setups.push({ machine: '', program: '', time: '', note: '' }); render(); },
