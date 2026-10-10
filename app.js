@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
-const VER = 'v7';
+const VER = 'v8';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -197,7 +197,7 @@ function viewParts() {
   const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">${esc(p.mat || 'материал не указан')} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')}${p.coat ? ' · ' + esc(p.coat) : ''} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
@@ -219,13 +219,15 @@ function viewPart() {
     <div class="row"><label>Артикул<input data-bind="art" value="${esc(p.art)}" ${dis}></label>
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div>
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
-    <label>Покрытие / доп. обработка<input data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, воронение…" ${dis}></label>
+    ${gradesIn(p.mat).length > 1 ? '<div class="warn">⚠ В материале указано несколько марок — проверьте, по какой считать заготовку.</div>' : ''}
+    <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
+    <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка (болт, штифт и т.п. — дорабатываем: время считается, пруток не нужен)</label>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
   <div class="card"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
     ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
     <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
-  <div class="card"><h2>Расчёт заготовки</h2>${calcHTML(p.calc, true)}
+  <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="muted">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
     ${dis ? '' : '<button data-act="calcToMat">Записать расчёт в поле «Материал»</button>'}</div>
   <div class="card"><h2>Установы</h2>
     ${(p.setups || []).map((s, i) => `<div class="setup">
@@ -252,7 +254,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>` : '<span class="muted">деталь удалена</span>'}</div></div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>
@@ -499,12 +501,39 @@ async function shrinkImage(file) {
   } catch (e) { return file; }
 }
 
+
+/* ───────── Покрытия и подсказка о нескольких марках ───────── */
+const COATS = [['оксидирование', 'воронение,оксид,окс'], ['анодирование', 'анодир,анод'], ['краска', 'покраска,порошков,эмаль']];
+function normCoat(text) {
+  return String(text || '').split(/\s*[,;/]\s*/).map(x => x.trim()).filter(Boolean).map(x => {
+    const n = nrm(x);
+    for (const [name, al] of COATS) if (nrm(name) === n || al.split(',').some(a => n.startsWith(nrm(a)))) return name;
+    return x;
+  }).filter((x, i, a) => a.indexOf(x) === i).join(', ');
+}
+function coatOptions(seg) {
+  const q = nrm(seg).replace(/ /g, '');
+  const hit = COATS.filter(([n, al]) => !q || [n].concat(al.split(',')).some(k => nrm(k).replace(/ /g, '').startsWith(q))).map(c => c[0]);
+  return hit;
+}
+function gradesIn(text) {
+  const parts = String(text || '').split(/\s*(?:[,;/]|(?:^|\s)или(?=\s|$))\s*/i).filter(Boolean);
+  const ids = []; let first = '';
+  for (const p of parts) {
+    let g = guessMaterial(p);
+    if (!g && first && /^[0-9а-яa-z\-]{2,}$/i.test(p.trim()) && !/^(круг|труба|шестигр|лист|плита|угол)/i.test(p.trim())) g = guessMaterial(first + ' ' + p);
+    if (g && !/без марки/.test(g.name) && !ids.includes(g.id)) ids.push(g.id);
+    if (!first && /^(сталь|ст)(?=\s|\d|$)/i.test(p.trim())) first = 'сталь';
+  }
+  return ids;
+}
+
 /* ───────── Чтение основной надписи чертежа ───────── */
 function parseTitle(text) {
   const t = String(text || '').replace(/\s+/g, ' ');
   const clean = v => (v || '').replace(/_{2,}/g, ' ').replace(/\s+/g, ' ').replace(/^[\s,;:.\-]+|[\s,;:]+$/g, '');
   const take = (re) => { const m = t.match(re); return m ? clean(m[1]).slice(0, 80) : ''; };
-  const stop = '(?=\\s*(?:МАТЕРИАЛ|ЗАГОТОВКА|ДОП\\.?\\s*ОБРАБОТКА|ПОКРЫТИЕ|ПРИМЕЧАНИЕ|S\\s*=|У6|ДЕТАЛЬ|ЛИСТ\\s*:|КОЛ-ВО|АРТ(?=\\s|$)|Н\\.?\\s*контр|Лит\\.|Масса)|\\s*$)';
+  const stop = '(?=\\s*(?:МАТЕРИАЛ|ЗАГОТОВКА|ДОП\\.?\\s*ОБРАБОТКА|ПОКРЫТИЕ|ПРИМЕЧАНИЕ|S\\s*=|У6|ДЕТАЛЬ|ЛИСТ\\s*:|КОЛ-ВО|Время|АРТ(?=\\s|$)|Н\\.?\\s*контр|Лит\\.|Масса)|\\s*$)';
   const mat = take(new RegExp('МАТЕРИАЛ\\s*:\\s*(.*?)' + stop, 'i'));
   const blank = take(new RegExp('ЗАГОТОВКА\\s*:\\s*(.*?)' + stop, 'i'));
   const dop = take(new RegExp('ДОП\\.?\\s*ОБРАБОТКА\\s*:\\s*(.*?)' + stop, 'i'));
@@ -544,7 +573,8 @@ async function autoFillFromDrawing(blob) {
       const sh = draft.calc && blankShape(r.blank);
       if (sh) { draft.calc.shape = sh.shape; draft.calc.dims = Object.assign(defaultDims(sh.shape), sh.dims); got.push('заготовка'); }
     }
-    if (!String(draft.coat || '').trim() && r.coat) { draft.coat = r.coat; got.push('покрытие'); }
+    if (!String(draft.coat || '').trim() && r.coat) { draft.coat = normCoat(r.coat); got.push('покрытие'); }
+    if (gradesIn(draft.mat).length > 1) got.push('⚠ указано несколько марок — проверьте');
     if (got.length) { toast('Из чертежа подставлено: ' + got.join(', ')); render(); }
   } catch (e) { console.warn('title block', e); }
 }
@@ -752,7 +782,7 @@ function cbPick(box, opt) {
 }
 document.addEventListener('focusin', e => { const t = e.target; if (t.classList && t.classList.contains('cb-in')) { t.select(); cbShow(t.closest('.cb'), ''); } });
 document.addEventListener('input', e => { const t = e.target; if (t.classList && t.classList.contains('cb-in')) cbShow(t.closest('.cb'), t.value); });
-document.addEventListener('mousedown', e => { const o = e.target.closest('.cb-opt'); if (o) { e.preventDefault(); cbPick(o.closest('.cb'), o); } });
+document.addEventListener('mousedown', e => { const o = e.target.closest('.cb-opt'); if (o && !o.dataset.coat) { e.preventDefault(); cbPick(o.closest('.cb'), o); } });
 document.addEventListener('focusout', e => {
   const t = e.target; if (!t.classList || !t.classList.contains('cb-in')) return;
   setTimeout(() => { const box = t.closest('.cb'); if (!box) return; box.querySelector('.cb-list').hidden = true; if (draft && draft.calc) t.value = matOf(draft.calc).name; }, 120);
@@ -770,6 +800,32 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') { list.hidden = true; }
 });
 document.addEventListener('click', e => { const im = e.target.closest('#viewer .vbody img'); if (im) im.classList.toggle('full'); });
+
+
+/* ───────── Покрытие: подсказки по первым буквам ───────── */
+function csShow(inp) {
+  if (!inp.parentElement) return;
+  const list = inp.parentElement.querySelector('.cb-list'); if (!list) return;
+  const i = inp.value.lastIndexOf(','), seg = inp.value.slice(i + 1).trim();
+  const have = inp.value.slice(0, i + 1).split(',').map(x => x.trim());
+  const opts = coatOptions(seg).filter(n => !have.includes(n));
+  list.innerHTML = opts.map(n => `<div class="cb-opt" data-coat="${esc(n)}"><span>${esc(n)}</span></div>`).join('');
+  list.hidden = !opts.length;
+}
+function csPick(inp, name) {
+  const i = inp.value.lastIndexOf(','), head = i >= 0 ? inp.value.slice(0, i).trim() : '';
+  inp.value = (head ? head + ', ' : '') + name;
+  if (draft) draft.coat = inp.value;
+  inp.parentElement.querySelector('.cb-list').hidden = true;
+}
+document.addEventListener('focusin', e => { const t = e.target; if (t.classList && t.classList.contains('cs-in')) csShow(t); });
+document.addEventListener('input', e => { const t = e.target; if (t.classList && t.classList.contains('cs-in')) csShow(t); });
+document.addEventListener('mousedown', e => { const o = e.target.closest && e.target.closest('[data-coat]'); if (o) { e.preventDefault(); csPick(o.closest('.cs').querySelector('.cs-in'), o.dataset.coat); } });
+document.addEventListener('focusout', e => { const t = e.target; if (!t.classList || !t.classList.contains('cs-in')) return; setTimeout(() => { const l = t.parentElement && t.parentElement.querySelector('.cb-list'); if (l) l.hidden = true; if (draft) { const n = normCoat(t.value); if (n !== t.value) { t.value = n; draft.coat = n; } } }, 120); });
+document.addEventListener('keydown', e => {
+  const t = e.target; if (!t.classList || !t.classList.contains('cs-in') || e.key !== 'Enter') return;
+  e.preventDefault(); const o = t.parentElement.querySelector('[data-coat]'); if (o) csPick(t, o.dataset.coat);
+});
 
 /* ───────── Запуск ───────── */
 let unsubs = [];

@@ -107,3 +107,8 @@ body.noscroll{overflow:hidden}
 .cb-opt:hover,.cb-opt.on{background:var(--acc-soft)}
 .cb-custom span{color:var(--acc)}
 .cb-empty{padding:10px 12px;color:var(--muted)}
+
+.warn{background:#fff4e0;color:#7a4b00;border:1px solid #f0c36d;border-radius:8px;padding:8px 10px;margin:0 0 10px;font-size:14px}
+@media (prefers-color-scheme:dark){.warn{background:#3a2c10;color:#f5c97a;border-color:#6b5420}}
+.cs{position:relative}
+label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
