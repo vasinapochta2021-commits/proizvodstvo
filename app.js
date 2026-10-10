@@ -197,8 +197,8 @@ function viewParts() {
   const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')}${p.coat ? ' · ' + esc(p.coat) : ''} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
-      <div class="s">${stepsLine(p)}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
+      ${workLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
@@ -211,10 +211,18 @@ function fileBlock(meta, key, dis) {
   if (!meta) return '<div class="file"><span class="muted">нет файла</span></div>';
   return previewHTML(meta) + `<div class="file"><span>📎 ${esc(meta.name)}</span><button class="x" data-act="openFile" data-arg="${meta.id}">В новой вкладке</button>${dis ? '' : `<button class="x danger" data-act="rmFile" data-arg="${key}">Убрать</button>`}</div>`;
 }
-function stepsLine(p) {
+const isCoatName = x => { const n = normCoat(x); return !!n && !n.includes(',') && COATS.some(c => c[0] === n); };
+function partWork(p) {
   const st = (p.steps || []).map(x => String(x || '').trim()).filter(Boolean);
-  if (!st.length) return '<span class="muted">слесарка: не указана</span>';
-  const t = st.join(' → '); return 'слесарка (' + st.length + '): ' + esc(t.length > 110 ? t.slice(0, 107) + '…' : t);
+  const work = st.filter(x => !isCoatName(x));
+  const coats = normCoat([p.coat].concat(st.filter(isCoatName)).filter(Boolean).join(', ')).split(', ').filter(Boolean);
+  return { work, coats };
+}
+const clip = (t, n) => esc(t.length > n ? t.slice(0, n - 3) + '…' : t);
+function workLines(p) {
+  const w = partWork(p);
+  return `<div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : '<span class="muted">слесарка: не указана</span>'}</div>`
+    + (w.coats.length ? `<div class="s">покрытие: <b>${esc(w.coats.join(', '))}</b></div>` : '');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -247,7 +255,8 @@ function viewPart() {
     ${dis ? '' : '<button data-act="addSetup">+ Установ</button>'}
     <p class="muted">Время на одну деталь по машинному таймеру. Изменили режимы — поправьте здесь, прошлые цифры пересчитаются.</p></div>
   <div class="card"><h2>Слесарные операции</h2>
-    ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Нет.</p>'}
+    <p class="muted">Прогнать резьбу, пескоструйка, снять заусенцы и т. п. Покрытия (оксидирование, краска, анодирование) — не здесь, а в поле «Покрытие» вверху.</p>
+    ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
     ${dis ? '' : '<button data-act="addStep">+ Операция</button>'}</div>
   ${used.length ? `<div class="card"><h2>Входит в изделия</h2>${used.map(u => `<a href="#/project/${u.id}">${esc(u.name)}</a>`).join('<br>')}</div>` : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
@@ -262,7 +271,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}<div class="s muted">${esc(pt.mat || '')}${pt.coat ? ' · ' + esc(pt.coat) : ''} · установов: ${(pt.setups || []).length}<br>${stepsLine(pt)}</div>` : '<span class="muted">деталь удалена</span>'}</div></div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}<div class="s muted">${esc(pt.mat || '')} · установов: ${(pt.setups || []).length}</div>${workLines(pt)}` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>
@@ -673,6 +682,7 @@ const ACT = {
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
   addStep() { draft.steps.push(''); render(); },
   delStep(i) { draft.steps.splice(i, 1); render(); },
+  moveCoat(i) { const n = normCoat(draft.steps[i]); draft.steps.splice(i, 1); draft.coat = normCoat([draft.coat, n].filter(Boolean).join(', ')); render(); toast('Перенесено в «Покрытие»'); },
   calcToMat() {
     const c = draft.calc, r = calc(c), t = `${r.mat.name}, ${r.shape.name} ${dimsText(c)}`;
     const cur = (draft.mat || '').trim();
@@ -756,6 +766,7 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.file) return attach(t);
   if (t.dataset.bind === 'calc.shape' && draft) { draft.calc.dims = defaultDims(t.value); render(); return; }
+  if (t.dataset.bind && t.dataset.bind.startsWith('steps.') && draft && isCoatName(t.value)) { render(); return; }
   if (t.dataset.u) return userChange(t);
   if (t.dataset.m) { const m = S.machines.find(x => x.id === t.dataset.m); if (m && t.value.trim()) B.save('machines', m.id, { name: t.value.trim() }); }
 });
