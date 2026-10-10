@@ -5,8 +5,10 @@ const VER = 'v8';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
-const parseT = x => { const t = String(x == null ? '' : x).trim().replace(',', '.'); if (t.includes(':')) { const [a, b] = t.split(':'); const m = parseFloat(a) || 0, sc = parseFloat(b) || 0; return m + sc / 60; } const v = parseFloat(t); return isFinite(v) ? v : 0; };
-const fmtT = x => { if (x === '' || x == null) return ''; if (typeof x === 'string') return x; let m = Math.floor(x + 1e-9), sc = Math.round((x - m) * 60); if (sc === 60) { m++; sc = 0; } return sc ? m + ':' + String(sc).padStart(2, '0') : String(m); };
+const parseT = x => { const t = String(x == null ? '' : x).trim().replace(',', '.'); if (t.includes(':')) { const p = t.split(':').map(v => parseFloat(v) || 0); return p.length >= 3 ? p[0] * 60 + p[1] + p[2] / 60 : p[0] + p[1] / 60; } const v = parseFloat(t); return isFinite(v) ? v : 0; };
+const hms = sec => { const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), c = sec % 60, p = n => String(n).padStart(2, '0'); return h ? h + ':' + p(m) + ':' + p(c) : m + ':' + p(c); };
+const maskT = d => { d = d.padStart(6, '0'); return d.slice(0, 2) + ':' + d.slice(2, 4) + ':' + d.slice(4); };
+const fmtT = x => { if (x === '' || x == null) return ''; if (typeof x === 'string') return x; const sec = Math.round(x * 60); return maskT(String(Math.floor(sec / 3600) * 10000 + Math.floor(sec % 3600 / 60) * 100 + sec % 60)); };
 const humT = x => { const t = String(x == null ? '' : x).trim(); if (!t) return ''; const v = typeof x === 'number' ? x : parseT(t); const m = Math.floor(v + 1e-9); let sc = Math.round((v - m) * 60); return (m ? m + ' мин' : '') + (m && sc ? ' ' : '') + (sc ? sc + ' с' : '') || '0 мин'; };
 const num = x => { const v = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isFinite(v) ? v : 0; };
 const fmt = (v, d) => (isFinite(v) ? v : 0).toLocaleString('ru-RU', { maximumFractionDigits: d == null ? 2 : d });
@@ -231,7 +233,7 @@ function workLines(p) {
 function setupsLine(p) {
   const st = p.setups || [];
   if (!st.length) return 'сетапов на станках: нет';
-  const tm = x => { const t = String(x == null ? '' : x).trim(); if (!t) return 'время не указано'; const sec = Math.round((typeof x === 'number' ? x : parseT(t)) * 60); return 'тайм ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
+  const tm = x => { const t = String(x == null ? '' : x).trim(); if (!t) return 'время не указано'; const sec = Math.round((typeof x === 'number' ? x : parseT(t)) * 60); return 'тайм ' + hms(sec); };
   return 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
 }
 function partLines(p) {
@@ -273,12 +275,12 @@ function viewPart() {
       <div class="sh">Сетап ${i + 1}${s.type ? ' · ' + esc(s.type) : ''}</div>
       <label>Тип<select data-bind="setups.${i}.type" ${dis}><option value="">—</option>${SETUP_TYPES.map(t => `<option${t === s.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <label>Станок<select data-bind="setups.${i}.machine" ${dis}><option value="">—</option>${machines.map(m => `<option value="${m.id}"${m.id === s.machine ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
-      <label>Время (мин или м:сс)<input placeholder="7 или 7:30" data-bind="setups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
+      <label>Время (чч:мм:сс)<input class="tmask" inputmode="numeric" autocomplete="off" placeholder="00:00:00" data-bind="setups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
       <label>Заметка<input data-bind="setups.${i}.note" value="${esc(s.note)}" ${dis}></label>
-      <div class="pg"><label>Программа<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
+      <div class="pg"><label>Имя файла ПУ<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
       ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
     ${dis ? '' : '<button data-act="addSetup">+ Сетап</button>'}
-    <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную; позже оно будет обновляться из отчётов операторов.</p></div>
+    <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную, только цифры — двоеточия расставятся сами (7 мин 15 с = 000715, 1 ч 15 мин 13 с = 011513); позже оно будет обновляться из отчётов операторов.</p></div>
   <div class="card"><h2>Слесарные операции</h2>
     <p class="muted">Прогнать резьбу, пескоструйка, снять заусенцы и т. п. Покрытия (оксидирование, краска, анодирование) — не здесь, а в поле «Покрытие» вверху.</p>
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
@@ -779,6 +781,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { listQuery = t.value; const pos = t.selectionStart; render(); const q = $('#q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } return; }
+  if (t.classList && t.classList.contains('tmask')) { const d = t.value.replace(/\D/g, '').slice(-6); t.value = /[1-9]/.test(d) ? maskT(d) : ''; }
   const p = t.dataset && t.dataset.bind; if (!p || !draft) return;
   setPath(draft, p, t.type === 'checkbox' ? t.checked : t.value);
   if (p === 'calc.len') draft.calc.lenSet = true;
