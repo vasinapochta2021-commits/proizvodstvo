@@ -226,7 +226,7 @@ function workLines(p) {
 function partLines(p) {
   const w = partWork(p), bits = [];
   let m = esc(p.mat || 'материал не указан');
-  if (p.calc && p.calc.lenSet && !p.bought) { const r = calc(p.calc); if (r.pieceLen > 0) m += ` · длина заготовки ${fmt(r.pieceLen, 0)} мм`; }
+  if (p.calc && !p.bought) { const r = calc(p.calc); if (r.pieceLen > 0) m += ` · длина заготовки ${fmt(r.pieceLen, 0)} мм`; }
   if (p.bought) m = 'покупная заготовка: ' + m;
   return `<div class="s">${m}</div>
     <div class="s">установов на станках: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
