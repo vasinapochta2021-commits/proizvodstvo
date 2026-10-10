@@ -261,13 +261,14 @@ function viewPart() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div>
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
     ${gradesIn(p.mat).length > 1 ? '<div class="warn">⚠ В материале указано несколько марок — проверьте, по какой считать заготовку.</div>' : ''}
-    <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
     <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка</label>
     <p class="muted chk-h">Болт, штифт и т. п., которые дорабатываем: время считается, пруток не нужен. Какая именно — напишите в поле «Материал», например: болт DIN 933 М20×100.</p>
+    <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
+
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
   </div>
-  <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="muted">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
+  <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="warn">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
     ${dis ? '' : '<button data-act="calcToMat">Записать расчёт в поле «Материал»</button>'}</div>
   <div class="card"><h2>Сетапы</h2>
     ${!machines.length ? `<div class="warn">Список станков пуст, поэтому в поле «Станок» нечего выбирать. ${S.me && S.me.isAdmin ? '<button class="link" data-act="seedMachines">Заполнить стандартным списком станков</button>' : 'Попросите администратора заполнить список во вкладке «Команда».'}</div>` : ''}
