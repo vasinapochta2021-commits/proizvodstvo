@@ -151,3 +151,6 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .pi .tx2>a{display:block;font-weight:600;margin-bottom:6px;color:var(--ink)}
 .pi .tx2>a .art{color:var(--acc)}
 .pitem>label{margin-top:6px}
+
+label.chk{margin:4px 0 2px}
+.chk-h{margin:0 0 14px;font-size:13px}

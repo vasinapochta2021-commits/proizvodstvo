@@ -231,7 +231,7 @@ function workLines(p) {
 function setupsLine(p) {
   const st = p.setups || [];
   if (!st.length) return 'сетапов на станках: нет';
-  const tm = x => { const t = String(x == null ? '' : x).trim(); return t ? esc(humT(x)) : 'время не указано'; };
+  const tm = x => { const t = String(x == null ? '' : x).trim(); if (!t) return 'время не указано'; const sec = Math.round((typeof x === 'number' ? x : parseT(t)) * 60); return 'тайм ' + Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
   return 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
 }
 function partLines(p) {
@@ -242,7 +242,8 @@ function partLines(p) {
   return `<div class="s">${m}</div>
     <div class="s">${setupsLine(p)}${p.drawing ? '' : ' · нет чертежа'}</div>
     <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
-    + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
+    + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '')
+    + (String(p.note || '').trim() ? `<div class="s">примечание: ${clip(String(p.note).replace(/\s+/g, ' ').trim(), 140)}</div>` : '');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -259,7 +260,8 @@ function viewPart() {
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
     ${gradesIn(p.mat).length > 1 ? '<div class="warn">⚠ В материале указано несколько марок — проверьте, по какой считать заготовку.</div>' : ''}
     <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
-    <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка (болт, штифт и т.п. — дорабатываем: время считается, пруток не нужен). Какая именно — напишите в поле «Материал», например: сталь, болт DIN 933 М20×100</label>
+    <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка</label>
+    <p class="muted chk-h">Болт, штифт и т. п., которые дорабатываем: время считается, пруток не нужен. Какая именно — напишите в поле «Материал», например: болт DIN 933 М20×100.</p>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
   </div>
