@@ -130,6 +130,24 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .list .item .tx{flex:1}
 @media(max-width:560px){.list .item .thumb{width:110px;height:80px}}
 
-.setup{grid-template-columns:130px 1fr 1fr 90px 1fr auto}
+.setup{grid-template-columns:130px 1fr 120px 1fr 1fr auto}
 .setup .sh{grid-column:1/-1;font-weight:600}
 @media(max-width:700px){.setup{grid-template-columns:1fr 1fr}.setup .sh{grid-column:span 2}}
+
+/* телефон: чертёж сверху, строки отделены друг от друга */
+.pi .tx2{min-width:0;flex:1}
+.pi .s{font-size:13px;color:var(--muted)}
+.list .tx .s + .s,.pi .tx2 .s + .s{margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+@media(max-width:700px){
+  .row{grid-template-columns:1fr}
+  .pitem{grid-template-columns:1fr auto;align-items:end}
+  .pitem .pi{grid-column:1/-1;flex-direction:column;align-items:stretch;gap:10px}
+  .pitem .pi .thumb{width:100%;height:auto;aspect-ratio:4/3;max-height:300px}
+  .pitem .pi .thumb.none{height:140px}
+  .list a.item.hasth{flex-direction:column;align-items:stretch;gap:10px}
+  .list .item .thumb{width:100%;height:auto;aspect-ratio:4/3;max-height:300px}
+  .list .item .thumb.none{height:120px}
+}
+.pi .tx2>a{display:block;font-weight:600;margin-bottom:6px;color:var(--ink)}
+.pi .tx2>a .art{color:var(--acc)}
+.pitem>label{margin-top:6px}

@@ -5,6 +5,9 @@ const VER = 'v8';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
+const parseT = x => { const t = String(x == null ? '' : x).trim().replace(',', '.'); if (t.includes(':')) { const [a, b] = t.split(':'); const m = parseFloat(a) || 0, sc = parseFloat(b) || 0; return m + sc / 60; } const v = parseFloat(t); return isFinite(v) ? v : 0; };
+const fmtT = x => { if (x === '' || x == null) return ''; if (typeof x === 'string') return x; let m = Math.floor(x + 1e-9), sc = Math.round((x - m) * 60); if (sc === 60) { m++; sc = 0; } return sc ? m + ':' + String(sc).padStart(2, '0') : String(m); };
+const humT = x => { const t = String(x == null ? '' : x).trim(); if (!t) return ''; const v = typeof x === 'number' ? x : parseT(t); const m = Math.floor(v + 1e-9); let sc = Math.round((v - m) * 60); return (m ? m + ' мин' : '') + (m && sc ? ' ' : '') + (sc ? sc + ' с' : '') || '0 мин'; };
 const num = x => { const v = parseFloat(String(x == null ? '' : x).replace(',', '.')); return isFinite(v) ? v : 0; };
 const fmt = (v, d) => (isFinite(v) ? v : 0).toLocaleString('ru-RU', { maximumFractionDigits: d == null ? 2 : d });
 
@@ -18,9 +21,9 @@ const TPL = {
   accountant: { name: 'Бухгалтер', perms: { catalog: 0, launches: 1, reports: 0, prices: 1 } },
   viewer: { name: 'Только просмотр', perms: { catalog: 1, launches: 1, reports: 1, prices: 0 } }
 };
-const SETUP_TYPES = ['токарный', 'фрезерный'];
-const guessType = name => /фрез|mill/i.test(name) ? 'фрезерный' : /токар|lathe|tc\s?\d|nexsus|ck-?\d/i.test(name) ? 'токарный' : '';
-const SEED_MACHINES = ['Metalltec TC45', 'Metalltec Nexsus 55 (приводной инструмент, ось C)', 'Metalltec CK-36',
+const SETUP_TYPES = ['токарный', 'фрезерный', 'токарно-фрезерный'];
+const guessType = name => /nex[us]{1,2}\s?55|токарно-фрез/i.test(name) ? 'токарно-фрезерный' : /фрез|mill/i.test(name) ? 'фрезерный' : /токар|lathe|tc\s?-?\d|[cs]k\s?-?\d|ts\s?-?\d/i.test(name) ? 'токарный' : '';
+const SEED_MACHINES = ['Metalltec TC45', 'Metalltec Nexus 55', 'Metalltec CK-36',
   'Китайский токарный станок', 'Фрезерный станок ЧПУ', 'Токарный 16К20', 'Токарный ИЖ',
   'Фрезерный универсальный (малый)', 'Фрезерный универсальный (большой)'];
 
@@ -228,7 +231,7 @@ function workLines(p) {
 function setupsLine(p) {
   const st = p.setups || [];
   if (!st.length) return 'сетапов на станках: нет';
-  const tm = x => { const t = String(x == null ? '' : x).trim(); return t ? esc(t) + ' мин' : 'время не указано'; };
+  const tm = x => { const t = String(x == null ? '' : x).trim(); return t ? esc(humT(x)) : 'время не указано'; };
   return 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
 }
 function partLines(p) {
@@ -268,9 +271,9 @@ function viewPart() {
       <div class="sh">Сетап ${i + 1}${s.type ? ' · ' + esc(s.type) : ''}</div>
       <label>Тип<select data-bind="setups.${i}.type" ${dis}><option value="">—</option>${SETUP_TYPES.map(t => `<option${t === s.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <label>Станок<select data-bind="setups.${i}.machine" ${dis}><option value="">—</option>${machines.map(m => `<option value="${m.id}"${m.id === s.machine ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
-      <div class="pg"><label>Программа<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
-      <label>Время, мин<input inputmode="decimal" data-bind="setups.${i}.time" value="${esc(s.time)}" ${dis}></label>
+      <label>Время (мин или м:сс)<input placeholder="7 или 7:30" data-bind="setups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
       <label>Заметка<input data-bind="setups.${i}.note" value="${esc(s.note)}" ${dis}></label>
+      <div class="pg"><label>Программа<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
       ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
     ${dis ? '' : '<button data-act="addSetup">+ Сетап</button>'}
     <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную; позже оно будет обновляться из отчётов операторов.</p></div>
@@ -291,7 +294,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}${partLines(pt)}` : '<span class="muted">деталь удалена</span>'}</div></div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div class="tx2">${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${partLines(pt)}` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>
@@ -645,7 +648,7 @@ async function savePart() {
   const p = clone(draft);
   if (!p.name.trim()) { formErr = 'Укажите название'; return render(); }
   p.name = p.name.trim(); p.art = (p.art || '').trim();
-  p.setups = (p.setups || []).map(s => Object.assign({}, s, { time: s.time === '' || s.time == null ? '' : num(s.time) }));
+  p.setups = (p.setups || []).map(s => { const e = s.time === '' || s.time == null || String(s.time).trim() === ''; const sec = e ? '' : Math.round(parseT(s.time) * 60); return Object.assign({}, s, { timeSec: sec, time: e ? '' : sec / 60 }); });
   const del = draft._del; delete p._del; stamp(p);
   const addTo = route().q.get('addTo');
   const id = await B.save('parts', p.id || null, p);
@@ -878,10 +881,13 @@ function startWatch() {
   stopWatch();
   const w = (col, key, need) => {
     if (!need) { S[key] = []; S.ready[key] = true; return; }
-    unsubs.push(B.watch(col, rows => { S[key] = rows; S.ready[key] = true; if (draft && draftKey === location.hash && key !== 'machines') return; render(); }, () => { S[key] = []; S.ready[key] = true; render(); }));
+    unsubs.push(B.watch(col, rows => { S[key] = rows; S.ready[key] = true; if (key === 'machines') fixMachineNames(rows); if (draft && draftKey === location.hash && key !== 'machines') return; render(); }, () => { S[key] = []; S.ready[key] = true; render(); }));
   };
   w('users', 'users', true); w('machines', 'machines', true);
   w('parts', 'parts', can('catalog', 1)); w('projects', 'projects', can('catalog', 1));
+}
+function fixMachineNames(rows) {
+  rows.forEach(m => { if (/nex[us]{1,2}\s?55/i.test(m.name) && m.name !== 'Metalltec Nexus 55' && !m._fx) { m._fx = 1; Promise.resolve(B.save('machines', m.id, { name: 'Metalltec Nexus 55' })).catch(() => {}); } });
 }
 function stopWatch() { unsubs.forEach(u => u()); unsubs = []; S.users = S.machines = S.parts = S.projects = []; S.ready = {}; }
 B.onAuth(u => {
