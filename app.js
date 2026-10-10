@@ -1,6 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
+const VER = 'v4';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -243,7 +244,7 @@ function renderMain() {
   if (S.me === undefined) return;
   if (!S.me) { top.hidden = true; if (!$('#lg')) view.innerHTML = viewLogin(); return; }
   if (S.me.missing || S.me.error || S.me.active === false) { top.hidden = true; view.innerHTML = viewNoProfile(); return; }
-  top.hidden = false; $('#whoName').textContent = S.me.name || S.me.login;
+  top.hidden = false; $('#whoName').textContent = (S.me.name || S.me.login) + ' · ' + VER;
   const r = route(); const sec = r.seg[0] || (can('catalog', 1) ? 'projects' : 'progress');
   $('#nav').innerHTML = NAV.filter(n => n[2]()).map(n => `<a href="#/${n[0]}" class="${n[0] === sec || (sec === 'part' && n[0] === 'parts') || (sec === 'project' && n[0] === 'projects') ? 'on' : ''}">${n[1]}</a>`).join('');
   const key = location.hash || '#/';
@@ -281,7 +282,7 @@ function fileBlob(m) {
   if (!blobP.has(m.id)) blobP.set(m.id, B.getFile(m.id).catch(e => { blobP.delete(m.id); throw e; }));
   return blobP.get(m.id);
 }
-const PDFJS = ['https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/'];
+const PDFJS = ['pdfjs/', 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/'];
 let pdfjsP = null;
 function loadPdfjs() {
   if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
@@ -374,7 +375,7 @@ function hydrate() {
       el.innerHTML = `<img src="${url}" alt="${esc(meta.name)}">`;
     }).catch(e => {
       console.warn('превью чертежа', e);
-      if (el.isConnected) el.innerHTML = '<span class="muted">Не удалось показать чертёж на странице. Нажмите «В новой вкладке».</span>';
+      if (el.isConnected) el.innerHTML = '<span class="muted">Не удалось показать чертёж: ' + esc((e && e.message) || e) + '. Нажмите «В новой вкладке».</span>';
     });
   });
 }
