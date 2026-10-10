@@ -123,3 +123,9 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
 .thumb{width:112px;height:80px}
 .pi .thumb{width:104px;height:76px}
 .hero-info .row{grid-template-columns:1fr}
+
+/* списки: миниатюра слева крупно, текст справа */
+.list a.item.hasth{display:flex;gap:16px;align-items:flex-start}
+.list .item .thumb{width:200px;height:140px;flex:none}
+.list .item .tx{flex:1}
+@media(max-width:560px){.list .item .thumb{width:110px;height:80px}}

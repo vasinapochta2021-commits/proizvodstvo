@@ -197,8 +197,7 @@ function viewParts() {
   const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
-      ${workLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+      ${partLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
@@ -222,7 +221,17 @@ const clip = (t, n) => esc(t.length > n ? t.slice(0, n - 3) + '…' : t);
 function workLines(p) {
   const w = partWork(p);
   return `<div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : '<span class="muted">слесарка: не указана</span>'}</div>`
-    + (w.coats.length ? `<div class="s">покрытие: <b>${esc(w.coats.join(', '))}</b></div>` : '');
+    + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
+}
+function partLines(p) {
+  const w = partWork(p), bits = [];
+  let m = esc(p.mat || 'материал не указан');
+  if (p.calc && p.calc.lenSet && !p.bought) { const r = calc(p.calc); if (r.pieceLen > 0) m += ` · длина заготовки ${fmt(r.pieceLen, 0)} мм`; }
+  if (p.bought) m = 'покупная заготовка: ' + m;
+  return `<div class="s">${m}</div>
+    <div class="s">установов на станках: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
+    <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
+    + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -239,7 +248,7 @@ function viewPart() {
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
     ${gradesIn(p.mat).length > 1 ? '<div class="warn">⚠ В материале указано несколько марок — проверьте, по какой считать заготовку.</div>' : ''}
     <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
-    <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка (болт, штифт и т.п. — дорабатываем: время считается, пруток не нужен)</label>
+    <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка (болт, штифт и т.п. — дорабатываем: время считается, пруток не нужен). Какая именно — напишите в поле «Материал», например: сталь, болт DIN 933 М20×100</label>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
   </div>
@@ -271,7 +280,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}<div class="s muted">${esc(pt.mat || '')} · установов: ${(pt.setups || []).length}</div>${workLines(pt)}` : '<span class="muted">деталь удалена</span>'}</div></div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}${partLines(pt)}` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>
@@ -756,6 +765,7 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { listQuery = t.value; const pos = t.selectionStart; render(); const q = $('#q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } return; }
   const p = t.dataset && t.dataset.bind; if (!p || !draft) return;
   setPath(draft, p, t.type === 'checkbox' ? t.checked : t.value);
+  if (p === 'calc.len') draft.calc.lenSet = true;
   if (p.startsWith('calc.')) refreshCalc();
   if (p === 'mat' && draft.calc && !draft.calc.matUser) {
     const g = guessMaterial(draft.mat);
