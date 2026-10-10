@@ -357,9 +357,15 @@ function thumbHTML(meta, clickable) {
   if (!meta) return '<span class="thumb none"></span>';
   reg(meta);
   const act = clickable ? ` data-act="view" data-arg="${meta.id}"` : '';
-  return meta.thumb ? `<img class="thumb" src="${meta.thumb}" alt=""${act}>` : `<span class="thumb none"${act}>📄</span>`;
+  return meta.thumb ? `<img class="thumb" src="${meta.thumb}" alt=""${act}>` : `<span class="thumb none" data-bf="${meta.id}"${act}>📄</span>`;
 }
+let bfChain = Promise.resolve();
 function hydrate() {
+  document.querySelectorAll('[data-bf]:not([data-busy])').forEach(el => {
+    el.dataset.busy = '1'; const meta = pvMeta[el.dataset.bf];
+    if (!meta || !can('catalog', 2) || thumbDone.has(meta.id)) return;
+    bfChain = bfChain.then(async () => { try { await backfillThumb(meta, await fileBlob(meta)); } catch (e) { } });
+  });
   document.querySelectorAll('[data-pv]:not([data-busy])').forEach(el => {
     el.dataset.busy = '1'; const meta = pvMeta[el.dataset.pv]; if (!meta) return;
     getPreview(meta).then(url => {
@@ -398,7 +404,9 @@ async function openViewer(id) {
 const projThumb = p => {
   const f = (p.files || []).find(x => x.thumb); if (f) return f;
   for (const it of (p.items || [])) { const pt = partById(it.partId); if (pt && pt.drawing && pt.drawing.thumb) return pt.drawing; }
-  return (p.files || [])[0] || null;
+  if ((p.files || [])[0]) return p.files[0];
+  for (const it of (p.items || [])) { const pt = partById(it.partId); if (pt && pt.drawing) return pt.drawing; }
+  return null;
 };
 
 /* ───────── Файлы ───────── */
