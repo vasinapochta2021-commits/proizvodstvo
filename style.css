@@ -155,9 +155,9 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
 label.chk{margin:4px 0 2px}
 .chk-h{margin:0 0 14px;font-size:13px}
 .note-block{border-radius:8px;padding:0}
-.note-block.note-high{background:#fde8e8;border:2px solid var(--err);padding:10px;border-radius:8px}
+.note-block.note-high{background:#fde8e8;border:2px solid var(--danger);padding:10px;border-radius:8px}
 .note-block.note-normal{background:#fef9e7;border:2px solid #e6c200;padding:10px;border-radius:8px}
 .note-hdr{display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:start}
 .note-hdr label:first-child{flex:1}
 @media(max-width:700px){.note-hdr{grid-template-columns:1fr}}
-.s-high{color:var(--err);font-weight:600}
+.s-high{color:var(--danger);font-weight:600}
