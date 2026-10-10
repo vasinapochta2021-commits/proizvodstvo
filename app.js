@@ -197,7 +197,8 @@ function viewParts() {
   const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')}${p.coat ? ' · ' + esc(p.coat) : ''} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+      <div class="s">${p.bought ? '<span class="tag">покупная заготовка</span> ' : ''}${esc(p.mat || 'материал не указан')}${p.coat ? ' · ' + esc(p.coat) : ''} · установов: ${(p.setups || []).length}${p.drawing ? '' : ' · нет чертежа'}</div>
+      <div class="s">${stepsLine(p)}</div></div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
@@ -210,12 +211,21 @@ function fileBlock(meta, key, dis) {
   if (!meta) return '<div class="file"><span class="muted">нет файла</span></div>';
   return previewHTML(meta) + `<div class="file"><span>📎 ${esc(meta.name)}</span><button class="x" data-act="openFile" data-arg="${meta.id}">В новой вкладке</button>${dis ? '' : `<button class="x danger" data-act="rmFile" data-arg="${key}">Убрать</button>`}</div>`;
 }
+function stepsLine(p) {
+  const st = (p.steps || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (!st.length) return '<span class="muted">слесарка: не указана</span>';
+  const t = st.join(' → '); return 'слесарка (' + st.length + '): ' + esc(t.length > 110 ? t.slice(0, 107) + '…' : t);
+}
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
   const used = S.projects.filter(pr => (pr.items || []).some(i => i.partId === p.id));
   const machines = S.machines.slice().sort(byName);
   return `<a class="back" href="#/parts">← Детали</a><h1>${p.id ? 'Деталь' : 'Новая деталь'}</h1>
-  <div class="card">
+  <div class="hero">
+  <div class="card hero-dr"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
+    ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
+    <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
+  <div class="card hero-info">
     <div class="row"><label>Артикул<input data-bind="art" value="${esc(p.art)}" ${dis}></label>
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div>
     <label>Материал (как писать в наряде)<input data-bind="mat" value="${esc(p.mat)}" placeholder="Сталь 40, круг Ø30" ${dis}></label>
@@ -224,9 +234,7 @@ function viewPart() {
     <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка (болт, штифт и т.п. — дорабатываем: время считается, пруток не нужен)</label>
     <label>Заметка<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
   </div>
-  <div class="card"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
-    ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
-    <p class="muted">PDF или фото, до 8 МБ. STEP/DXF добавим позже.</p></div>
+  </div>
   <div class="card"><h2>Расчёт заготовки</h2>${p.bought ? '<p class="muted">Заготовка покупная — расчёт прутка не нужен, считайте только если режете из прутка.</p>' : ''}${calcHTML(p.calc, true)}
     ${dis ? '' : '<button data-act="calcToMat">Записать расчёт в поле «Материал»</button>'}</div>
   <div class="card"><h2>Установы</h2>
@@ -254,7 +262,7 @@ function viewProject() {
     <label>Название<input data-bind="name" value="${esc(p.name)}" ${dis}></label></div></div>
   <div class="card"><h2>Состав (детали)</h2>
     ${(p.items || []).map((it, i) => { const pt = partById(it.partId); return `<div class="pitem">
-      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}` : '<span class="muted">деталь удалена</span>'}</div></div>
+      <div class="pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div>${pt ? `<a href="#/part/${pt.id}">${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</a>${pt.bought ? ' <span class="tag">покупная заготовка</span>' : ''}<div class="s muted">${esc(pt.mat || '')}${pt.coat ? ' · ' + esc(pt.coat) : ''} · установов: ${(pt.setups || []).length}<br>${stepsLine(pt)}</div>` : '<span class="muted">деталь удалена</span>'}</div></div>
       <label>Шт на 1 изделие<input inputmode="numeric" data-bind="items.${i}.qty" value="${esc(it.qty)}" ${dis}></label>
       ${dis ? '' : `<button class="x danger" data-act="delItem" data-arg="${i}">✕</button>`}</div>`; }).join('') || '<p class="muted">Деталей в составе нет.</p>'}
     ${dis ? '' : `<div class="bar"><div class="grow"><select id="addPart"><option value="">— выбрать из каталога —</option>${parts.map(x => `<option value="${x.id}">${esc((x.art ? x.art + ' · ' : '') + x.name)}</option>`).join('')}</select></div>

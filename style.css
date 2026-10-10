@@ -27,7 +27,7 @@ h2{font-size:16px;margin:0 0 10px}
 #nav a{padding:6px 10px;border-radius:8px;color:var(--ink)}
 #nav a.on{background:var(--acc-soft);color:var(--acc);font-weight:600}
 .who{font-size:13px;color:var(--muted)}
-main{max-width:920px;margin:0 auto;padding:16px 16px 80px}
+main{max-width:1100px;margin:0 auto;padding:16px 16px 80px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:0 0 14px}
 label{display:block;font-size:13px;color:var(--muted);margin:0 0 10px}
 input,select,textarea{display:block;width:100%;margin-top:4px;padding:9px 10px;font:inherit;color:var(--ink);
@@ -112,3 +112,14 @@ body.noscroll{overflow:hidden}
 @media (prefers-color-scheme:dark){.warn{background:#3a2c10;color:#f5c97a;border-color:#6b5420}}
 .cs{position:relative}
 label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
+
+/* карточка детали: чертёж крупно слева, данные справа */
+.hero{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:14px;align-items:start;margin:0 0 14px}
+.hero .card{margin:0}
+.hero-dr .pv{min-height:260px}
+.hero-dr .pv img{max-height:80vh}
+.hero-dr .pvframe{height:75vh}
+@media(max-width:820px){.hero{grid-template-columns:1fr}}
+.thumb{width:112px;height:80px}
+.pi .thumb{width:104px;height:76px}
+.hero-info .row{grid-template-columns:1fr}
