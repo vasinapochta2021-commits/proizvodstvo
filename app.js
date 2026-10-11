@@ -455,8 +455,8 @@ function viewLaunches(status) {
       const pct = launchPct(l);
       const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
       return `<a class="item" href="#/launch/${l.id}">
-        <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} × ${l.qty}</div>
-        <div class="s">${d}</div>
+        <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)}</div>
+        <div class="s"><b>${l.qty} штук</b> · ${d}</div>
         ${progressBar(pct, 100)}</div></a>`;
     }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
 }
@@ -481,8 +481,8 @@ function viewLaunch(id) {
     ${!isActive && can('launches', 2) ? `<button data-act="reopenLaunch" data-arg="${l.id}">Вернуть в работу</button>` : ''}
     <a class="btn" href="#/print/${l.id}">🖨 Печать</a>
     </div>
-    <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)} × ${l.qty}</h2>
-    <div class="s">${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}</div>
+    <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)}</h2>
+    <div class="s"><b>${l.qty} штук</b> · ${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}</div>
     <div style="margin:12px 0">${progressBar(pct, 100)}</div>
     <h3>Детали</h3>
     ${(l.items || []).map(it => {
@@ -496,7 +496,7 @@ function viewLaunch(id) {
         return groupHdr + `<div class="li-op"><span>${esc(st.label)}</span>${progressBar(d, it.qtyTotal)}</div>`;
       }).join('');
       return `<div class="li-part">
-        <div class="li-hdr"><a href="#/part/${it.partId}">${it.partArt ? `<span class="art">${esc(it.partArt)}</span>` : ''}${esc(it.partName)}</a> <span class="muted">× ${it.qtyTotal}</span></div>
+        <div class="li-hdr pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div class="tx2"><a href="#/part/${it.partId}">${it.partArt ? `<span class="art">${esc(it.partArt)}</span>` : ''}${esc(it.partName)}</a><div class="s"><b>${it.qtyTotal} штук</b> (${it.qtyPer} на изделие)</div></div></div>
         ${noteHTML}${stagesHTML}</div>`;
     }).join('')}
     <a href="#/progress">← Назад</a></div>`;
@@ -547,8 +547,8 @@ function viewReport() {
     ${rows.length ? rows.map(r => {
       const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
       return `<div class="rp-row">
-        <div class="rp-part"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
-          <span class="muted">${esc(r.launch.projectName)} × ${r.launch.qty} · нужно ${r.it.qtyTotal} шт</span></div>
+        <div class="rp-part pi">${thumbHTML(r.pt.drawing, !!r.pt.drawing)}<div class="tx2"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
+          <div class="s">${esc(r.launch.projectName)} · <b>${r.it.qtyTotal} штук</b></div></div></div>
         ${noteHTML}
         ${r.pending.map(st => {
           const d = r.done[r.it.partId + '_' + st.key] || 0;
@@ -583,8 +583,8 @@ function viewLocksmith() {
     ${rows.length ? rows.map(r => {
       const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
       return `<div class="lk-row">
-        <div class="lk-hdr"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
-          <span class="muted">${esc(r.launch.projectName)} × ${r.launch.qty} · нужно ${r.it.qtyTotal} шт</span></div>
+        <div class="lk-hdr pi">${thumbHTML(r.pt.drawing, !!r.pt.drawing)}<div class="tx2"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
+          <div class="s">${esc(r.launch.projectName)} · <b>${r.it.qtyTotal} штук</b></div></div></div>
         ${noteHTML}
         ${r.pending.map(o => `<div class="lk-op">
           <span>${esc(o.label)}</span> <span class="muted">· ${o.group || ''} · осталось ${o.remain} шт</span>
