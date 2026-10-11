@@ -198,6 +198,43 @@ const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || '')
 const partById = id => S.parts.find(p => p.id === id);
 const machineName = id => { const m = S.machines.find(x => x.id === id); return m ? m.name : ''; };
 
+/* ───────── Сортировка каталогов ───────── */
+const CAT_SORT_PARTS = [
+  { id: 'alpha', label: 'Название' },
+  { id: 'art', label: 'Артикул' },
+  { id: 'date', label: 'Дата' },
+  { id: 'mat', label: 'Материал' }
+];
+const CAT_SORT_PROJ = [
+  { id: 'alpha', label: 'Название' },
+  { id: 'art', label: 'Артикул' },
+  { id: 'date', label: 'Дата' },
+  { id: 'count', label: 'Кол-во деталей' }
+];
+let catSort = { parts: { key: 'alpha', dir: 1 }, projects: { key: 'alpha', dir: 1 } };
+function sortCatalog(items, cat) {
+  const st = catSort[cat] || catSort.parts;
+  const s = st.key, d = st.dir;
+  return items.slice().sort((a, b) => {
+    let r = 0;
+    if (s === 'alpha') r = String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    else if (s === 'art') r = String(a.art || '').localeCompare(String(b.art || ''), 'ru');
+    else if (s === 'date') r = (a.createdAt || 0) - (b.createdAt || 0);
+    else if (s === 'mat') r = String(a.mat || '').localeCompare(String(b.mat || ''), 'ru');
+    else if (s === 'count') r = ((a.items || []).length) - ((b.items || []).length);
+    if (r === 0) r = String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+    return r * d;
+  });
+}
+function catSortBtns(modes, cat) {
+  const st = catSort[cat];
+  return modes.map(m => {
+    const cur = st.key === m.id;
+    const arrow = cur ? (st.dir === 1 ? ' ↑' : ' ↓') : '';
+    return `<button class="chip${cur ? ' active' : ''}" data-act="setCatSort" data-arg="${cat}:${m.id}">${m.label}${arrow}</button>`;
+  }).join('');
+}
+
 /* ───────── Экраны ───────── */
 function viewLogin(err) {
   return `<div class="card login"><h1>Вход</h1>
@@ -221,15 +258,19 @@ function listBar(ph, newHref, canNew, label) {
 let listQuery = '';
 function viewParts() {
   const q = listQuery.toLowerCase();
-  const items = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q)).sort(byName);
+  const filtered = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q));
+  const items = sortCatalog(filtered, 'parts');
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
+    ${filtered.length > 1 ? `<div class="sort-bar">${catSortBtns(CAT_SORT_PARTS, 'parts')}</div>` : ''}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
       ${partLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
-  const items = S.projects.filter(p => !q || (p.art + ' ' + p.name).toLowerCase().includes(q)).sort(byName);
+  const filtered = S.projects.filter(p => !q || (p.art + ' ' + p.name).toLowerCase().includes(q));
+  const items = sortCatalog(filtered, 'projects');
   return `<h1>Изделия</h1>${listBar('Поиск по названию, артикулу', '#/project/new', can('catalog', 2), '+ Изделие')}
+    ${filtered.length > 1 ? `<div class="sort-bar">${catSortBtns(CAT_SORT_PROJ, 'projects')}</div>` : ''}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/project/${p.id}">${thumbHTML(projThumb(p))}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
       <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div>
       ${(() => { const hn = (p.items || []).map(i => { const pt = partById(i.partId); return pt && pt.notePri === 'high' && String(pt.note || '').trim() ? pt : null; }).filter(Boolean); return hn.length ? hn.map(pt => `<div class="s s-high">⚠ ${esc(pt.art || pt.name)}: ${clip(String(pt.note).replace(/\s+/g, ' ').trim(), 100)}</div>`).join('') : ''; })()}</div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
@@ -1146,6 +1187,14 @@ const ACT = {
     const st = sortState[tab];
     if (st.key === s) { st.dir *= -1; }
     else { st.key = s; st.dir = (s === 'date' || s === 'finished') ? -1 : 1; }
+    render();
+  },
+  setCatSort(arg) {
+    const [cat, key] = arg.split(':');
+    const st = catSort[cat];
+    if (!st) return;
+    if (st.key === key) { st.dir *= -1; }
+    else { st.key = key; st.dir = (key === 'date') ? -1 : 1; }
     render();
   },
   async finishLaunch(id) {
