@@ -430,12 +430,12 @@ async function makeThumb(blob, meta) {
   try {
     let src, w, h;
     if (isImg(meta)) { src = await createImageBitmap(blob); w = src.width; h = src.height; }
-    else if (isPdf(meta)) { src = await pdfPageCanvas(await openPdf(blob), 1, 800); w = src.width; h = src.height; }
+    else if (isPdf(meta)) { src = await pdfPageCanvas(await openPdf(blob), 1, 1200); w = src.width; h = src.height; }
     else return null;
-    const k = Math.min(1, 480 / Math.max(w, h)), cv = document.createElement('canvas');
+    const k = Math.min(1, 800 / Math.max(w, h)), cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
     const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(src, 0, 0, cv.width, cv.height);
-    return cv.toDataURL('image/jpeg', 0.85);
+    return cv.toDataURL('image/jpeg', 0.9);
   } catch (e) { return null; }
 }
 function getPreview(meta) {
@@ -443,7 +443,7 @@ function getPreview(meta) {
     prevP.set(meta.id, (async () => {
       const blob = await fileBlob(meta); let url;
       if (isImg(meta)) url = URL.createObjectURL(blob);
-      else url = (await pdfPageCanvas(await openPdf(blob), 1, 1000)).toDataURL('image/jpeg', 0.85);
+      else url = (await pdfPageCanvas(await openPdf(blob), 1, 1200)).toDataURL('image/jpeg', 0.92);
       prevCache.set(meta.id, url);
       backfillThumb(meta, blob);
       return url;
@@ -451,9 +451,9 @@ function getPreview(meta) {
   }
   return prevP.get(meta.id);
 }
-// у чертежей, загруженных раньше, миниатюры нет — дорисовываем и тихо сохраняем
+// у чертежей без миниатюры или со старой размытой — перегенерируем и тихо сохраняем
 async function backfillThumb(meta, blob) {
-  if (meta.thumb || thumbDone.has(meta.id) || !can('catalog', 2)) return;
+  if (meta.thumb && meta.thumb.length > 25000 || thumbDone.has(meta.id) || !can('catalog', 2)) return;
   thumbDone.add(meta.id);
   const t = await makeThumb(blob, meta); if (!t) return;
   meta.thumb = t;
