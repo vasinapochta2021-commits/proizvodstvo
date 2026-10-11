@@ -29,7 +29,7 @@ const SEED_MACHINES = ['Metalltec TC45', 'Metalltec Nexus 55', 'Metalltec CK-36'
   'Китайский токарный станок', 'Фрезерный станок ЧПУ', 'Токарный 16К20', 'Токарный ИЖ',
   'Фрезерный универсальный (малый)', 'Фрезерный универсальный (большой)'];
 
-const S = { me: null, users: [], machines: [], parts: [], projects: [], ready: {}, denied: {} };
+const S = { me: null, users: [], machines: [], parts: [], projects: [], launches: [], reports: [], ready: {}, denied: {} };
 function can(b, l) { const m = S.me; if (!m) return false; if (m.isAdmin) return true; return ((m.perms || {})[b] || 0) >= l; }
 
 /* ───────── Калькулятор материала ───────── */
@@ -232,10 +232,12 @@ function workLines(p) {
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '');
 }
 function setupsLine(p) {
-  const st = p.setups || [];
-  if (!st.length) return 'сетапов на станках: нет';
+  const st = p.setups || [], fs = p.finishSetups || [];
+  if (!st.length && !fs.length) return 'сетапов на станках: нет';
   const tm = x => { const t = String(x == null ? '' : x).trim(); if (!t) return 'время не указано'; const sec = Math.round((typeof x === 'number' ? x : parseT(t)) * 60); return 'тайм ' + hms(sec); };
-  return 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
+  let r = 'сетапов на станках: ' + st.length + st.map((u, i) => ` · сетап ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
+  if (fs.length) r += ' · чистовых: ' + fs.length + fs.map((u, i) => ` · чист. ${i + 1}${u.type ? ' (' + esc(u.type) + ')' : ''} — ${tm(u.time)}`).join('');
+  return r;
 }
 function partLines(p) {
   const w = partWork(p), bits = [];
@@ -244,10 +246,21 @@ function partLines(p) {
   if (p.bought) m = 'покупная заготовка: ' + m;
   return `<div class="s">${m}</div>
     <div class="s">${setupsLine(p)}${p.drawing ? '' : ' · нет чертежа'}</div>
-    ${p.harden ? `<div class="s">закалка: ${esc(p.hardenType || 'тип не указан')}${p.hardenHRC ? ', ' + esc(p.hardenHRC) + ' HRC' : ''}${p.hardenAllowance ? ' · с припуском' : ''}</div>` : ''}
+    ${p.harden ? `<div class="s">закалка: ${esc(p.hardenType || 'тип не указан')}${p.hardenHRC ? ', ' + esc(p.hardenHRC) + ' HRC' : ''}${p.hardenAllowance ? ' · с припуском' + ((p.finishSetups || []).length ? ' (' + (p.finishSetups || []).length + ' чист. сетап.)' : '') : ''}</div>` : ''}
     <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '')
     + (String(p.note || '').trim() ? `<div class="s${p.notePri === 'high' ? ' s-high' : ''}">${p.notePri === 'high' ? '⚠ ' : ''}примечание: ${clip(String(p.note).replace(/\s+/g, ' ').trim(), 140)}</div>` : '');
+}
+function finishSetupsHTML(setups, machines, dis) {
+  if (!setups.length) return '<p class="muted">Чистовых сетапов нет.</p>';
+  return setups.map((s, i) => `<div class="setup">
+    <div class="sh">Чистовой сетап ${i + 1}${s.type ? ' · ' + esc(s.type) : ''}</div>
+    <label>Тип<select data-bind="finishSetups.${i}.type" ${dis}><option value="">—</option>${SETUP_TYPES.map(t => `<option${t === s.type ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+    <label>Станок<select data-bind="finishSetups.${i}.machine" ${dis}><option value="">—</option>${machines.map(m => `<option value="${m.id}"${m.id === s.machine ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+    <label>Время (чч:мм:сс)<input class="tmask" inputmode="numeric" autocomplete="off" placeholder="00:00:00" data-bind="finishSetups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
+    <label>Заметка<input data-bind="finishSetups.${i}.note" value="${esc(s.note)}" ${dis}></label>
+    <div class="pg"><label>Имя файла ПУ<input data-bind="finishSetups.${i}.program" value="${esc(s.program)}" ${dis}></label></div>
+    ${dis ? '' : `<button class="x danger" data-act="delFinishSetup" data-arg="${i}">✕</button>`}</div>`).join('');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
@@ -292,6 +305,7 @@ function viewPart() {
       ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
     ${dis ? '' : '<button data-act="addSetup">+ Сетап</button>'}
     <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную, только цифры — двоеточия расставятся сами (7 мин 15 с = 000715, 1 ч 15 мин 13 с = 011513); позже оно будет обновляться из отчётов операторов.</p></div>
+  ${p.harden && p.hardenAllowance ? '<div class="card"><h2>Чистовая обработка после закалки</h2>' + finishSetupsHTML(p.finishSetups || [], machines, dis) + (dis ? '' : '<button data-act="addFinishSetup">+ Чистовой сетап</button>') + '<p class="muted">Сетапы чистовой обработки после закалки. Заполняются так же, как обычные сетапы.</p></div>' : ''}
   <div class="card"><h2>Слесарные операции</h2>
     <p class="muted">Прогнать резьбу, пескоструйка, снять заусенцы и т. п. Покрытия (оксидирование, краска, анодирование) — не здесь, а в поле «Покрытие» вверху.</p>
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
@@ -354,7 +368,9 @@ function viewTeam() {
 
 /* ───────── Рендер ───────── */
 const NAV = [['projects', 'Изделия', () => can('catalog', 1)], ['parts', 'Детали', () => can('catalog', 1)],
-  ['progress', 'В работе', () => true], ['done', 'Готовые', () => true], ['calc', 'Калькулятор', () => true], ['team', 'Команда', () => S.me && S.me.isAdmin]];
+  ['progress', 'В работе', () => can('launches', 1)], ['done', 'Готовые', () => can('launches', 1)],
+  ['report', 'Отчёт', () => can('reports', 2)], ['locksmith', 'Слесарка', () => can('launches', 1)],
+  ['calc', 'Калькулятор', () => true], ['team', 'Команда', () => S.me && S.me.isAdmin]];
 function render() { renderMain(); setTimeout(hydrate, 0); }
 function renderMain() {
   const top = $('#top'), view = $('#view');
@@ -363,7 +379,8 @@ function renderMain() {
   if (S.me.missing || S.me.error || S.me.active === false) { top.hidden = true; view.innerHTML = viewNoProfile(); return; }
   top.hidden = false; $('#whoName').textContent = (S.me.name || S.me.login) + ' · ' + VER;
   const r = route(); const sec = r.seg[0] || (can('catalog', 1) ? 'projects' : 'progress');
-  $('#nav').innerHTML = NAV.filter(n => n[2]()).map(n => `<a href="#/${n[0]}" class="${n[0] === sec || (sec === 'part' && n[0] === 'parts') || (sec === 'project' && n[0] === 'projects') ? 'on' : ''}">${n[1]}</a>`).join('');
+  const navOn = n => n === sec || (sec === 'part' && n === 'parts') || (sec === 'project' && n === 'projects') || ((sec === 'launch' || sec === 'launch-new' || sec === 'print') && n === 'progress');
+  $('#nav').innerHTML = NAV.filter(n => n[2]()).map(n => `<a href="#/${n[0]}" class="${navOn(n[0]) ? 'on' : ''}">${n[1]}</a>`).join('');
   const key = location.hash || '#/';
   const needCat = ['projects', 'parts', 'part', 'project'].includes(sec);
   if (needCat && !can('catalog', 1)) { view.innerHTML = viewStub('Нет доступа', 'У вас нет доступа к каталогу.'); return; }
@@ -371,9 +388,9 @@ function renderMain() {
     const isPart = sec === 'part', id = r.seg[1];
     if (draftKey !== key) {
       let rec;
-      if (id === 'new') rec = isPart ? { art: '', name: '', mat: '', note: '', calc: Object.assign(defaultCalc(), { qty: '1', spare: '0' }), setups: [], steps: [], drawing: null }
+      if (id === 'new') rec = isPart ? { art: '', name: '', mat: '', note: '', calc: Object.assign(defaultCalc(), { qty: '1', spare: '0' }), setups: [], finishSetups: [], steps: [], drawing: null }
         : { art: '', name: '', note: '', items: [], files: [] };
-      else { const src = isPart ? S.parts : S.projects; const f = src.find(x => x.id === id); if (!f) { view.innerHTML = S.ready[isPart ? 'parts' : 'projects'] ? viewStub('Не найдено', 'Такой записи нет.') : '<p class="muted pad">Загрузка…</p>'; return; } rec = clone(f); if (isPart) { rec.calc = rec.calc || defaultCalc(); rec.setups = rec.setups || []; rec.steps = rec.steps || []; } else { rec.items = rec.items || []; rec.files = rec.files || []; } }
+      else { const src = isPart ? S.parts : S.projects; const f = src.find(x => x.id === id); if (!f) { view.innerHTML = S.ready[isPart ? 'parts' : 'projects'] ? viewStub('Не найдено', 'Такой записи нет.') : '<p class="muted pad">Загрузка…</p>'; return; } rec = clone(f); if (isPart) { rec.calc = rec.calc || defaultCalc(); rec.setups = rec.setups || []; rec.finishSetups = rec.finishSetups || []; rec.steps = rec.steps || []; } else { rec.items = rec.items || []; rec.files = rec.files || []; } }
       if (isPart && rec.calc && !rec.calc.matUser) { const g = guessMaterial(rec.mat); if (g) rec.calc.mat = g.id; }
       draft = rec; draft._del = []; draftKey = key; formErr = '';
       if (id !== 'new') draft.id = id;
@@ -386,9 +403,218 @@ function renderMain() {
   if (sec === 'parts') view.innerHTML = viewParts();
   else if (sec === 'projects') view.innerHTML = viewProjects();
   else if (sec === 'team') view.innerHTML = viewTeam();
-  else if (sec === 'progress') view.innerHTML = viewStub('В работе', 'Запуски и прогресс по деталям появятся в следующей части.');
-  else if (sec === 'done') view.innerHTML = viewStub('Готовые', 'Завершённые запуски с хронометражем появятся в следующей части.');
+  else if (sec === 'progress') view.innerHTML = viewLaunches('active');
+  else if (sec === 'done') view.innerHTML = viewLaunches('done');
+  else if (sec === 'launch') { view.innerHTML = viewLaunch(r.seg[1]); return; }
+  else if (sec === 'launch-new') { view.innerHTML = viewLaunchNew(); return; }
+  else if (sec === 'report') { view.innerHTML = viewReport(); return; }
+  else if (sec === 'locksmith') { view.innerHTML = viewLocksmith(); return; }
+  else if (sec === 'print') { view.innerHTML = viewPrint(r.seg[1]); return; }
   else view.innerHTML = viewStub('Не найдено', 'Такой страницы нет.');
+}
+
+/* ───────── Запуски (В работе) ───────── */
+function launchProgress(launch) {
+  // подсчёт прогресса по отчётам: ключ partId_stageKey -> qty done
+  const reps = S.reports.filter(r => r.launchId === launch.id);
+  const done = {};
+  reps.forEach(r => (r.entries || []).forEach(e => {
+    const k = e.partId + '_' + (e.stageKey || 'setup_' + (e.setupIdx || 0));
+    done[k] = (done[k] || 0) + (e.done || 0);
+  }));
+  // обратная совместимость: старые отчёты со слесаркой
+  reps.forEach(r => (r.locksmith || []).forEach(e => {
+    const k = e.partId + '_lock_' + (e.stepIdx || 0);
+    done[k] = (done[k] || 0) + (e.done || 0);
+  }));
+  return { done };
+}
+function launchPct(launch) {
+  const { done } = launchProgress(launch);
+  let total = 0, completed = 0;
+  (launch.items || []).forEach(it => {
+    const pt = partById(it.partId);
+    const stages = partStages(pt);
+    stages.forEach(st => { total += it.qtyTotal; completed += Math.min(it.qtyTotal, done[it.partId + '_' + st.key] || 0); });
+    if (!stages.length) { total += it.qtyTotal; }
+  });
+  return total ? Math.round(completed / total * 100) : 0;
+}
+function progressBar(val, max) {
+  const pct = max ? Math.min(100, Math.round(val / max * 100)) : 0;
+  const cls = pct >= 100 ? 'pb-done' : pct > 0 ? 'pb-wip' : 'pb-zero';
+  return `<div class="pb ${cls}"><div class="pb-fill" style="width:${pct}%"></div><span class="pb-txt">${val}/${max} (${pct}%)</span></div>`;
+}
+function viewLaunches(status) {
+  const items = S.launches.filter(l => l.status === status).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const isActive = status === 'active';
+  const title = isActive ? 'В работе' : 'Готовые';
+  return `<h1>${title}</h1>
+    ${isActive && can('launches', 2) ? `<div class="bar"><div class="grow"></div><a class="btn primary" href="#/launch-new">+ Запуск</a></div>` : ''}
+    <div class="list">${items.map(l => {
+      const pct = launchPct(l);
+      const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
+      return `<a class="item" href="#/launch/${l.id}">
+        <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} × ${l.qty}</div>
+        <div class="s">${d}</div>
+        ${progressBar(pct, 100)}</div></a>`;
+    }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
+}
+function viewLaunchNew() {
+  if (!can('launches', 2)) return viewStub('Нет доступа', 'У вас нет прав на создание запусков.');
+  const projects = S.projects.slice().sort(byName);
+  return `<div class="card"><h2>Новый запуск</h2>
+    <label>Изделие<select id="lnProj"><option value="">— выберите —</option>${projects.map(p => `<option value="${p.id}">${p.art ? p.art + ' ' : ''}${esc(p.name)}</option>`).join('')}</select></label>
+    <label>Тираж, шт<input id="lnQty" type="number" min="1" value="1" inputmode="numeric"></label>
+    <div id="lnPreview"></div>
+    ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
+    <div class="btns"><button class="primary" data-act="createLaunch">Запустить</button> <a href="#/progress">Отмена</a></div></div>`;
+}
+function viewLaunch(id) {
+  const l = S.launches.find(x => x.id === id);
+  if (!l) return S.ready.launches ? viewStub('Не найдено', 'Запуск не найден.') : '<p class="muted pad">Загрузка…</p>';
+  const { done, lockDone } = launchProgress(l);
+  const pct = launchPct(l);
+  const isActive = l.status === 'active';
+  return `<div class="card"><div class="btns" style="float:right">
+    ${isActive && can('launches', 2) ? `<button data-act="finishLaunch" data-arg="${l.id}">Завершить ✓</button>` : ''}
+    ${!isActive && can('launches', 2) ? `<button data-act="reopenLaunch" data-arg="${l.id}">Вернуть в работу</button>` : ''}
+    <a class="btn" href="#/print/${l.id}">🖨 Печать</a>
+    </div>
+    <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)} × ${l.qty}</h2>
+    <div class="s">${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}</div>
+    <div style="margin:12px 0">${progressBar(pct, 100)}</div>
+    <h3>Детали</h3>
+    ${(l.items || []).map(it => {
+      const pt = partById(it.partId);
+      const stages = partStages(pt);
+      const noteHTML = pt && pt.note && pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(pt.note)}</div>` : '';
+      let curGroup = '';
+      const stagesHTML = stages.map(st => {
+        const d = done[it.partId + '_' + st.key] || 0;
+        const groupHdr = st.group && st.group !== curGroup ? (curGroup = st.group, `<div class="li-grp">${esc(st.group)}</div>`) : '';
+        return groupHdr + `<div class="li-op"><span>${esc(st.label)}</span>${progressBar(d, it.qtyTotal)}</div>`;
+      }).join('');
+      return `<div class="li-part">
+        <div class="li-hdr"><a href="#/part/${it.partId}">${it.partArt ? `<span class="art">${esc(it.partArt)}</span>` : ''}${esc(it.partName)}</a> <span class="muted">× ${it.qtyTotal}</span></div>
+        ${noteHTML}${stagesHTML}</div>`;
+    }).join('')}
+    <a href="#/progress">← Назад</a></div>`;
+}
+// Все этапы детали: сетапы, слесарка, закалка, покрытие
+function partStages(pt) {
+  if (!pt) return [];
+  const stages = [];
+  const setups = pt.setups || [];
+  setups.forEach((su, si) => {
+    const mn = su.machine ? machineName(su.machine) : '';
+    stages.push({ key: 'setup_' + si, label: (su.type || 'сетап ' + (si + 1)) + (mn ? ' · ' + mn : ''), group: 'Обработка' });
+  });
+  if (!setups.length) stages.push({ key: 'setup_0', label: 'обработка', group: 'Обработка' });
+  const work = partWork(pt);
+  work.work.forEach((w, wi) => stages.push({ key: 'lock_' + wi, label: w, group: 'Слесарка' }));
+  if (pt.harden) {
+    stages.push({ key: 'harden', label: 'закалка' + (pt.hardenType ? ' (' + pt.hardenType + ')' : ''), group: 'Закалка' });
+    if (pt.hardenAllowance) {
+      const fs = pt.finishSetups || [];
+      if (fs.length) fs.forEach((su, fi) => {
+        const mn = su.machine ? machineName(su.machine) : '';
+        stages.push({ key: 'finish_' + fi, label: 'чистовая ' + (su.type || 'сетап ' + (fi + 1)) + (mn ? ' · ' + mn : ''), group: 'Закалка' });
+      });
+      else stages.push({ key: 'finish_0', label: 'чистовая обработка после закалки', group: 'Закалка' });
+    }
+  }
+  if (work.coats.length) work.coats.forEach((c, ci) => stages.push({ key: 'coat_' + ci, label: c, group: 'Покрытие' }));
+  return stages;
+}
+function viewReport() {
+  if (!can('reports', 2)) return viewStub('Нет доступа', 'У вас нет прав на создание отчётов.');
+  const activeLaunches = S.launches.filter(l => l.status === 'active');
+  // собрать все детали из активных запусков
+  const rows = [];
+  activeLaunches.forEach(l => {
+    const { done } = launchProgress(l);
+    (l.items || []).forEach(it => {
+      const pt = partById(it.partId);
+      if (!pt) return;
+      const stages = partStages(pt);
+      const pending = stages.filter(st => (done[it.partId + '_' + st.key] || 0) < it.qtyTotal);
+      if (!pending.length) return;
+      rows.push({ launch: l, it, pt, stages, pending, done });
+    });
+  });
+  return `<div class="card"><h2>Вечерний отчёт</h2>
+    ${rows.length ? rows.map(r => {
+      const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
+      return `<div class="rp-row">
+        <div class="rp-part"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
+          <span class="muted">${esc(r.launch.projectName)} × ${r.launch.qty} · нужно ${r.it.qtyTotal} шт</span></div>
+        ${noteHTML}
+        ${r.pending.map(st => {
+          const d = r.done[r.it.partId + '_' + st.key] || 0;
+          const remain = r.it.qtyTotal - d;
+          return `<div class="rp-stage">
+            <div class="s">${esc(st.label)} · осталось ${remain} шт</div>
+            ${progressBar(d, r.it.qtyTotal)}
+            <label>Сделано, шт<input class="rp-done" type="number" min="0" max="${remain}" data-li="${r.launch.id}" data-pi="${r.it.partId}" data-sk="${st.key}" inputmode="numeric" value="0"></label>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('') + `<button class="primary" data-act="submitReport" style="margin-top:16px">Сохранить отчёт</button>`
+    : '<p class="muted">Все детали по активным запускам готовы, либо активных запусков нет.</p>'}</div>`;
+}
+function viewLocksmith() {
+  const activeLaunches = S.launches.filter(l => l.status === 'active');
+  const rows = [];
+  activeLaunches.forEach(l => {
+    const { done } = launchProgress(l);
+    (l.items || []).forEach(it => {
+      const pt = partById(it.partId);
+      if (!pt) return;
+      // все этапы кроме сетапов: слесарка, закалка, покрытие
+      const stages = partStages(pt).filter(st => !st.key.startsWith('setup_'));
+      const pending = stages.filter(st => (done[it.partId + '_' + st.key] || 0) < it.qtyTotal)
+        .map(st => ({ ...st, done: done[it.partId + '_' + st.key] || 0, remain: it.qtyTotal - (done[it.partId + '_' + st.key] || 0) }));
+      if (!pending.length) return;
+      rows.push({ launch: l, it, pt, pending });
+    });
+  });
+  return `<div class="card"><h2>Слесарка / Закалка / Покрытие</h2>
+    ${rows.length ? rows.map(r => {
+      const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
+      return `<div class="lk-row">
+        <div class="lk-hdr"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
+          <span class="muted">${esc(r.launch.projectName)} × ${r.launch.qty} · нужно ${r.it.qtyTotal} шт</span></div>
+        ${noteHTML}
+        ${r.pending.map(o => `<div class="lk-op">
+          <span>${esc(o.label)}</span> <span class="muted">· ${o.group || ''} · осталось ${o.remain} шт</span>
+          ${progressBar(o.done, r.it.qtyTotal)}
+          <label>Сделано<input class="lk-done" type="number" min="0" max="${o.remain}" data-li="${r.launch.id}" data-pi="${r.it.partId}" data-sk="${o.key}" inputmode="numeric" value="0"></label>
+        </div>`).join('')}
+      </div>`;
+    }).join('') + `<button class="primary" data-act="submitLocksmith" style="margin-top:16px">Сохранить</button>`
+    : '<p class="muted">Нет незавершённых операций (слесарка, закалка, покрытие).</p>'}</div>`;
+}
+function viewPrint(id) {
+  const l = S.launches.find(x => x.id === id);
+  if (!l) return viewStub('Не найдено', 'Запуск не найден.');
+  const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
+  return `<div class="print-sheet">
+    <h1>Задание на производство</h1>
+    <p><b>${l.projectArt ? esc(l.projectArt) + ' ' : ''}${esc(l.projectName)}</b> · Тираж: ${l.qty} шт · ${d}</p>
+    <table class="print-tbl"><thead><tr><th>Деталь</th><th>Кол-во</th><th>Материал</th><th>Сетапы</th><th>Слесарка</th><th>Примечание</th></tr></thead><tbody>
+    ${(l.items || []).map(it => {
+      const pt = partById(it.partId);
+      const setups = pt ? (pt.setups || []).map((s, i) => `${i + 1}. ${s.type || '?'} ${machineName(s.machine)}`).join('<br>') : '';
+      const work = pt ? partWork(pt) : { work: [] };
+      return `<tr><td>${it.partArt ? esc(it.partArt) + ' ' : ''}${esc(it.partName)}</td>
+        <td>${it.qtyTotal}</td><td>${pt ? esc(pt.mat || '—') : '—'}</td><td>${setups || '—'}</td>
+        <td>${work.work.length ? work.work.map(esc).join('<br>') : '—'}</td>
+        <td>${pt && pt.note ? (pt.notePri === 'high' ? '⚠ ' : '') + esc(pt.note) : ''}</td></tr>`;
+    }).join('')}
+    </tbody></table>
+    <button class="no-print" onclick="window.print()">🖨 Печать</button>
+    <a class="btn no-print" href="#/launch/${l.id}">← Назад</a></div>`;
 }
 
 /* ───────── Показ чертежей ───────── */
@@ -664,6 +890,7 @@ async function savePart() {
   if (!p.name.trim()) { formErr = 'Укажите название'; return render(); }
   p.name = p.name.trim(); p.art = (p.art || '').trim();
   p.setups = (p.setups || []).map(s => { const e = s.time === '' || s.time == null || String(s.time).trim() === ''; const sec = e ? '' : Math.round(parseT(s.time) * 60); return Object.assign({}, s, { timeSec: sec, time: e ? '' : sec / 60 }); });
+  p.finishSetups = (p.finishSetups || []).map(s => { const e = s.time === '' || s.time == null || String(s.time).trim() === ''; const sec = e ? '' : Math.round(parseT(s.time) * 60); return Object.assign({}, s, { timeSec: sec, time: e ? '' : sec / 60 }); });
   const del = draft._del; delete p._del; stamp(p);
   const addTo = route().q.get('addTo');
   const id = await B.save('parts', p.id || null, p);
@@ -718,6 +945,8 @@ const ACT = {
   addSetup() { draft.setups.push({ type: '', machine: '', program: '', time: '', note: '' }); render(); },
   delSetup(i) { draft.setups.splice(i, 1); render(); },
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
+  addFinishSetup() { draft.finishSetups = draft.finishSetups || []; draft.finishSetups.push({ type: '', machine: '', program: '', time: '', note: '' }); render(); },
+  delFinishSetup(i) { draft.finishSetups.splice(i, 1); render(); },
   addStep() { draft.steps.push(''); render(); },
   delStep(i) { draft.steps.splice(i, 1); render(); },
   moveCoat(i) { const n = normCoat(draft.steps[i]); draft.steps.splice(i, 1); draft.coat = normCoat([draft.coat, n].filter(Boolean).join(', ')); render(); toast('Перенесено в «Покрытие»'); },
@@ -780,7 +1009,70 @@ const ACT = {
   },
   async addMachine() { const v = $('#newMachine').value.trim(); if (!v) return; await B.save('machines', null, { name: v }); },
   async seedMachines() { for (const n of SEED_MACHINES) await B.save('machines', null, { name: n }); },
-  async delMachine(id) { if (confirm('Удалить станок из списка?')) await B.remove('machines', id); }
+  async delMachine(id) { if (confirm('Удалить станок из списка?')) await B.remove('machines', id); },
+  async createLaunch() {
+    const projId = $('#lnProj').value, qty = parseInt($('#lnQty').value) || 0;
+    formErr = '';
+    if (!projId) formErr = 'Выберите изделие';
+    else if (qty < 1) formErr = 'Тираж должен быть ≥ 1';
+    if (formErr) { render(); return; }
+    const proj = S.projects.find(p => p.id === projId);
+    if (!proj) { formErr = 'Изделие не найдено'; render(); return; }
+    const items = (proj.items || []).map(it => {
+      const pt = partById(it.partId);
+      return { partId: it.partId, partArt: pt ? pt.art : '', partName: pt ? pt.name : 'удалена', qtyPer: parseInt(it.qty) || 1, qtyTotal: (parseInt(it.qty) || 1) * qty };
+    });
+    if (!items.length) { formErr = 'В изделии нет деталей'; render(); return; }
+    const data = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login, items };
+    const id = await B.save('launches', null, data);
+    toast('Запуск создан'); location.hash = '#/launch/' + id;
+  },
+  async finishLaunch(id) {
+    if (!confirm('Завершить запуск? Он переедет в «Готовые».')) return;
+    const l = S.launches.find(x => x.id === id); if (!l) return;
+    const d = clone(l); d.status = 'done'; d.finished = Date.now();
+    await B.save('launches', id, d); toast('Запуск завершён');
+  },
+  async reopenLaunch(id) {
+    const l = S.launches.find(x => x.id === id); if (!l) return;
+    const d = clone(l); d.status = 'active'; delete d.finished;
+    await B.save('launches', id, d); toast('Запуск возвращён в работу');
+  },
+  async submitReport() {
+    const inputs = document.querySelectorAll('.rp-done');
+    const entries = [];
+    inputs.forEach(inp => {
+      const v = parseInt(inp.value) || 0;
+      if (v <= 0) return;
+      entries.push({ partId: inp.dataset.pi, stageKey: inp.dataset.sk, done: v, launchId: inp.dataset.li });
+    });
+    if (!entries.length) { toast('Нечего сохранять'); return; }
+    // группируем по запуску
+    const byLaunch = {};
+    entries.forEach(e => { (byLaunch[e.launchId] = byLaunch[e.launchId] || []).push(e); });
+    for (const [lid, ents] of Object.entries(byLaunch)) {
+      const data = { launchId: lid, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries: ents };
+      await B.save('reports', null, data);
+    }
+    toast('Отчёт сохранён'); render();
+  },
+  async submitLocksmith() {
+    const inputs = document.querySelectorAll('.lk-done');
+    const entries = [];
+    inputs.forEach(inp => {
+      const v = parseInt(inp.value) || 0;
+      if (v <= 0) return;
+      entries.push({ partId: inp.dataset.pi, stageKey: inp.dataset.sk, done: v, launchId: inp.dataset.li });
+    });
+    if (!entries.length) { toast('Нечего сохранять'); return; }
+    const byLaunch = {};
+    entries.forEach(e => { (byLaunch[e.launchId] = byLaunch[e.launchId] || []).push(e); });
+    for (const [lid, ents] of Object.entries(byLaunch)) {
+      const data = { launchId: lid, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries: ents };
+      await B.save('reports', null, data);
+    }
+    toast('Сохранено'); render();
+  }
 };
 
 document.addEventListener('click', e => {
@@ -809,9 +1101,22 @@ document.addEventListener('change', e => {
     const i = +t.dataset.bind.split('.')[1], st = draft.setups[i], m = S.machines.find(x => x.id === t.value);
     if (st && m && !st.type) { const g = guessType(m.name); if (g) { st.type = g; render(); return; } }
   }
+  if (t.dataset.bind && /^finishSetups\.\d+\.machine$/.test(t.dataset.bind) && draft) {
+    const i = +t.dataset.bind.split('.')[1], st = (draft.finishSetups || [])[i], m = S.machines.find(x => x.id === t.value);
+    if (st && m && !st.type) { const g = guessType(m.name); if (g) { st.type = g; render(); return; } }
+  }
   if ((t.dataset.bind === 'bought' || t.dataset.bind === 'notePri' || t.dataset.bind === 'harden') && draft) { render(); return; }
   if (t.dataset.bind === 'calc.shape' && draft) { draft.calc.dims = defaultDims(t.value); render(); return; }
   if (t.dataset.bind && t.dataset.bind.startsWith('steps.') && draft && isCoatName(t.value)) { render(); return; }
+  if (t.id === 'lnProj') {
+    const el = $('#lnPreview'); if (!el) return;
+    const proj = S.projects.find(p => p.id === t.value);
+    if (!proj) { el.innerHTML = ''; return; }
+    el.innerHTML = '<b>Детали в составе:</b>' + (proj.items || []).map(it => {
+      const pt = partById(it.partId); return `<div class="s">${pt ? (pt.art ? esc(pt.art) + ' ' : '') + esc(pt.name) : 'удалена'} × ${it.qty}</div>`;
+    }).join('');
+    return;
+  }
   if (t.dataset.u) return userChange(t);
   if (t.dataset.m) { const m = S.machines.find(x => x.id === t.dataset.m); if (m && t.value.trim()) B.save('machines', m.id, { name: t.value.trim() }); }
 });
@@ -901,11 +1206,12 @@ function startWatch() {
   };
   w('users', 'users', true); w('machines', 'machines', true);
   w('parts', 'parts', can('catalog', 1)); w('projects', 'projects', can('catalog', 1));
+  w('launches', 'launches', can('launches', 1)); w('reports', 'reports', true);
 }
 function fixMachineNames(rows) {
   rows.forEach(m => { if (/nex[us]{1,2}\s?55/i.test(m.name) && m.name !== 'Metalltec Nexus 55' && !m._fx) { m._fx = 1; Promise.resolve(B.save('machines', m.id, { name: 'Metalltec Nexus 55' })).catch(() => {}); } });
 }
-function stopWatch() { unsubs.forEach(u => u()); unsubs = []; S.users = S.machines = S.parts = S.projects = []; S.ready = {}; }
+function stopWatch() { unsubs.forEach(u => u()); unsubs = []; S.users = S.machines = S.parts = S.projects = S.launches = S.reports = []; S.ready = {}; }
 B.onAuth(u => {
   const was = S.me && S.me.uid;
   S.me = u;

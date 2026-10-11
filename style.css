@@ -161,6 +161,32 @@ label.chk{margin:4px 0 2px}
 .note-hdr label:first-child{flex:1}
 @media(max-width:700px){.note-hdr{grid-template-columns:1fr}}
 .s-high,.item .s.s-high{color:var(--danger);font-weight:600}
+/* Прогресс-бар */
+.pb{position:relative;height:22px;background:var(--bg);border-radius:6px;overflow:hidden;border:1px solid var(--line);margin:4px 0}
+.pb-fill{height:100%;border-radius:5px;transition:width .3s}
+.pb-zero .pb-fill{background:var(--line)}
+.pb-wip .pb-fill{background:var(--acc)}
+.pb-done .pb-fill{background:#22c55e}
+.pb-txt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--ink);mix-blend-mode:luminosity}
+/* Карточка запуска */
+.li-part{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0;background:var(--card)}
+.li-hdr{font-weight:600;margin-bottom:6px}
+.li-hdr a{color:var(--acc);text-decoration:none}
+.li-grp{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:10px 0 4px;letter-spacing:.5px}
+.li-op{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:center;margin:4px 0;font-size:13px}
+@media(max-width:560px){.li-op{grid-template-columns:1fr}}
+/* Отчёт */
+.rp-row,.lk-row{border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0;background:var(--card)}
+.rp-part{margin-bottom:6px}.rp-part b{font-size:15px}
+.rp-stage{margin:8px 0;padding:8px;background:var(--bg);border-radius:8px}
+.lk-op{margin:8px 0;padding:8px;background:var(--bg);border-radius:8px}
+.lk-hdr{margin-bottom:6px}.lk-hdr b{font-size:15px}
+/* Печать */
+.print-sheet{max-width:900px;margin:0 auto;padding:20px}
+.print-tbl{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+.print-tbl th,.print-tbl td{border:1px solid #888;padding:6px 8px;text-align:left;vertical-align:top}
+.print-tbl th{background:#eee;font-weight:600}
+@media print{.no-print,#top{display:none!important}.print-sheet{padding:0}}
 .hard-opts{padding:0 0 6px 28px;display:flex;flex-direction:column;gap:8px}
 .hard-opts .row{display:grid;grid-template-columns:120px 1fr;gap:10px}
 @media(max-width:700px){.hard-opts .row{grid-template-columns:1fr}}
