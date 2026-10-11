@@ -476,36 +476,47 @@ function deadlineTag(ts) {
   return `<span class="dl ${cls}">⏰ ${deadlineStr(ts)}</span>`;
 }
 const PRI_ORDER = { asap: 0, urgent: 1, normal: 2, low: 3 };
-const SORT_MODES = [
+const SORT_ACTIVE = [
   { id: 'pri', label: 'Срочность' },
   { id: 'deadline', label: 'Дедлайн' },
-  { id: 'date', label: 'Дата' },
+  { id: 'date', label: 'Дата запуска' },
   { id: 'alpha', label: 'Алфавит' },
   { id: 'progress', label: 'Прогресс' }
 ];
-let launchSort = 'date', launchSortDir = -1; // -1 = desc (новые сверху)
-function sortLaunches(items) {
-  const s = launchSort, d = launchSortDir;
+const SORT_DONE = [
+  { id: 'finished', label: 'Дата завершения' },
+  { id: 'date', label: 'Дата запуска' },
+  { id: 'alpha', label: 'Алфавит' },
+  { id: 'qty', label: 'Тираж' }
+];
+let sortState = { active: { key: 'date', dir: -1 }, done: { key: 'finished', dir: -1 } };
+function sortLaunches(items, status) {
+  const st = sortState[status] || sortState.active;
+  const s = st.key, d = st.dir;
   return items.slice().sort((a, b) => {
     let r = 0;
     if (s === 'pri') { r = (PRI_ORDER[a.priority] ?? 2) - (PRI_ORDER[b.priority] ?? 2); }
     else if (s === 'deadline') { r = (a.deadline || Infinity) - (b.deadline || Infinity); }
     else if (s === 'date') { r = (a.created || 0) - (b.created || 0); }
+    else if (s === 'finished') { r = (a.finished || 0) - (b.finished || 0); }
     else if (s === 'alpha') { r = String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru'); }
     else if (s === 'progress') { r = launchPct(a) - launchPct(b); }
+    else if (s === 'qty') { r = (a.qty || 0) - (b.qty || 0); }
     if (r === 0) r = (a.created || 0) - (b.created || 0);
     return r * d;
   });
 }
 function viewLaunches(status) {
   const filtered = S.launches.filter(l => l.status === status);
-  const items = sortLaunches(filtered);
   const isActive = status === 'active';
+  const items = sortLaunches(filtered, isActive ? 'active' : 'done');
   const title = isActive ? 'В работе' : 'Готовые';
-  const sortBtns = SORT_MODES.map(m => {
-    const active = launchSort === m.id;
-    const arrow = active ? (launchSortDir === 1 ? ' ↑' : ' ↓') : '';
-    return `<button class="chip${active ? ' active' : ''}" data-act="setSort" data-arg="${m.id}">${m.label}${arrow}</button>`;
+  const modes = isActive ? SORT_ACTIVE : SORT_DONE;
+  const st = sortState[isActive ? 'active' : 'done'];
+  const sortBtns = modes.map(m => {
+    const cur = st.key === m.id;
+    const arrow = cur ? (st.dir === 1 ? ' ↑' : ' ↓') : '';
+    return `<button class="chip${cur ? ' active' : ''}" data-act="setSort" data-arg="${m.id}">${m.label}${arrow}</button>`;
   }).join('');
   return `<h1>${title}</h1>
     ${isActive && can('launches', 2) ? `<div class="bar"><div class="grow"></div><a class="btn primary" href="#/launch-new">+ Запуск</a></div>` : ''}
@@ -1130,8 +1141,11 @@ const ACT = {
   },
   modalClose() { closeModal(); },
   setSort(s) {
-    if (launchSort === s) { launchSortDir *= -1; }
-    else { launchSort = s; launchSortDir = s === 'date' ? -1 : 1; }
+    const r = route();
+    const tab = r.seg[0] === 'done' ? 'done' : 'active';
+    const st = sortState[tab];
+    if (st.key === s) { st.dir *= -1; }
+    else { st.key = s; st.dir = (s === 'date' || s === 'finished') ? -1 : 1; }
     render();
   },
   async finishLaunch(id) {
