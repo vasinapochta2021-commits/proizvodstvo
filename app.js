@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
-const VER = 'v8';
+const VER = 'v9';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
