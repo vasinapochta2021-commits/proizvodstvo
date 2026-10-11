@@ -161,3 +161,6 @@ label.chk{margin:4px 0 2px}
 .note-hdr label:first-child{flex:1}
 @media(max-width:700px){.note-hdr{grid-template-columns:1fr}}
 .s-high{color:var(--danger);font-weight:600}
+.hard-opts{padding:0 0 6px 28px;display:flex;flex-direction:column;gap:8px}
+.hard-opts .row{display:grid;grid-template-columns:120px 1fr;gap:10px}
+@media(max-width:700px){.hard-opts .row{grid-template-columns:1fr}}

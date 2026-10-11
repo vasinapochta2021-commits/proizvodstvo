@@ -243,6 +243,7 @@ function partLines(p) {
   if (p.bought) m = 'покупная заготовка: ' + m;
   return `<div class="s">${m}</div>
     <div class="s">${setupsLine(p)}${p.drawing ? '' : ' · нет чертежа'}</div>
+    ${p.harden ? `<div class="s">закалка: ${esc(p.hardenType || 'тип не указан')}${p.hardenHRC ? ', ' + esc(p.hardenHRC) + ' HRC' : ''}${p.hardenAllowance ? ' · с припуском' : ''}</div>` : ''}
     <div class="s">${w.work.length ? 'слесарка (' + w.work.length + '): ' + clip(w.work.join(' → '), 110) : 'слесарка: не указана'}</div>`
     + (w.coats.length ? `<div class="s">покрытие: ${esc(w.coats.join(', '))}</div>` : '')
     + (String(p.note || '').trim() ? `<div class="s${p.notePri === 'high' ? ' s-high' : ''}">${p.notePri === 'high' ? '⚠ ' : ''}примечание: ${clip(String(p.note).replace(/\s+/g, ' ').trim(), 140)}</div>` : '');
@@ -263,6 +264,12 @@ function viewPart() {
     ${gradesIn(p.mat).length > 1 ? '<div class="warn">⚠ В материале указано несколько марок — проверьте, по какой считать заготовку.</div>' : ''}
     <label class="chk"><input type="checkbox" data-bind="bought" ${p.bought ? 'checked' : ''} ${dis}> Покупная заготовка</label>
     <p class="muted chk-h">Болт, штифт и т. п., которые дорабатываем: время считается, пруток не нужен. Какая именно — напишите в поле «Материал», например: болт DIN 933 М20×100.</p>
+    <label class="chk"><input type="checkbox" data-bind="harden" ${p.harden ? 'checked' : ''} ${dis}> Закалка</label>
+    ${p.harden ? `<div class="hard-opts">
+      <div class="row"><label>Тип<select data-bind="hardenType" ${dis}><option value="">—</option><option${p.hardenType === 'твч' ? ' selected' : ''}>твч</option><option${p.hardenType === 'печь' ? ' selected' : ''}>печь</option></select></label>
+      <label>Твёрдость, HRC<input data-bind="hardenHRC" value="${esc(p.hardenHRC)}" placeholder="45–50" inputmode="text" ${dis}></label></div>
+      <label class="chk"><input type="checkbox" data-bind="hardenAllowance" ${p.hardenAllowance ? 'checked' : ''} ${dis}> Припуск под чистовую обработку после закалки</label>
+    </div>` : ''}
     <label class="cs">Покрытие (можно несколько через запятую, можно своё)<input class="cs-in" data-bind="coat" value="${esc(p.coat)}" placeholder="оксидирование, краска…" autocomplete="off" ${dis}><div class="cb-list" hidden></div></label>
 
     <div class="note-block${p.notePri === 'high' ? ' note-high' : p.notePri === 'normal' ? ' note-normal' : ''}">
@@ -422,12 +429,12 @@ async function makeThumb(blob, meta) {
   try {
     let src, w, h;
     if (isImg(meta)) { src = await createImageBitmap(blob); w = src.width; h = src.height; }
-    else if (isPdf(meta)) { src = await pdfPageCanvas(await openPdf(blob), 1, 260); w = src.width; h = src.height; }
+    else if (isPdf(meta)) { src = await pdfPageCanvas(await openPdf(blob), 1, 800); w = src.width; h = src.height; }
     else return null;
-    const k = Math.min(1, 240 / Math.max(w, h)), cv = document.createElement('canvas');
+    const k = Math.min(1, 480 / Math.max(w, h)), cv = document.createElement('canvas');
     cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
     const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(src, 0, 0, cv.width, cv.height);
-    return cv.toDataURL('image/jpeg', 0.6);
+    return cv.toDataURL('image/jpeg', 0.85);
   } catch (e) { return null; }
 }
 function getPreview(meta) {
@@ -801,7 +808,7 @@ document.addEventListener('change', e => {
     const i = +t.dataset.bind.split('.')[1], st = draft.setups[i], m = S.machines.find(x => x.id === t.value);
     if (st && m && !st.type) { const g = guessType(m.name); if (g) { st.type = g; render(); return; } }
   }
-  if ((t.dataset.bind === 'bought' || t.dataset.bind === 'notePri') && draft) { render(); return; }
+  if ((t.dataset.bind === 'bought' || t.dataset.bind === 'notePri' || t.dataset.bind === 'harden') && draft) { render(); return; }
   if (t.dataset.bind === 'calc.shape' && draft) { draft.calc.dims = defaultDims(t.value); render(); return; }
   if (t.dataset.bind && t.dataset.bind.startsWith('steps.') && draft && isCoatName(t.value)) { render(); return; }
   if (t.dataset.u) return userChange(t);
