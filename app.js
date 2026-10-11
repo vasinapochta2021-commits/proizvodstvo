@@ -571,10 +571,15 @@ function viewLaunches(status) {
       if (projFile) { th = thumbHTML(projFile); }
       else { const pts = (l.items || []).map(it => partById(it.partId)).filter(p => p && p.drawing);
         th = pts.length ? pts.map(p => thumbHTML(p.drawing)).join('') : '<span class="thumb none"></span>'; }
-      return `<a class="item hasth" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
+      const partsInfo = (l.items || []).map(it => {
+        const pt = partById(it.partId);
+        if (!pt) return '';
+        return `<div class="launch-part-info"><div class="lpi-hdr">${pt.drawing ? thumbHTML(pt.drawing) : ''}<div><b>${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</b> · ${it.qtyTotal} штук</div></div>${partLines(pt)}</div>`;
+      }).join('');
+      return `<a class="item hasth launch-item" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
         <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div>
         <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
-        ${progressBar(pct, 100)}</div></a>`;
+        ${progressBar(pct, 100)}${partsInfo}</div></a>`;
     }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
 }
 function viewLaunchNew() {
