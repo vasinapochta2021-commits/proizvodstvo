@@ -445,6 +445,16 @@ function progressBar(val, max) {
   const cls = pct >= 100 ? 'pb-done' : pct > 0 ? 'pb-wip' : 'pb-zero';
   return `<div class="pb ${cls}"><div class="pb-fill" style="width:${pct}%"></div><span class="pb-txt">${val}/${max} (${pct}%)</span></div>`;
 }
+const PRI_LABELS = { asap: '🔴 Очень срочная', urgent: '🟠 Срочная', normal: '', low: '🔵 Несрочная' };
+const PRI_CSS = { asap: 'pri-asap', urgent: 'pri-urgent', normal: '', low: 'pri-low' };
+function priTag(p) { if (!p || p === 'normal') return ''; return `<span class="tag ${PRI_CSS[p] || ''}">${PRI_LABELS[p] || p}</span>`; }
+function deadlineStr(ts) { if (!ts) return ''; const d = new Date(ts); return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
+function deadlineTag(ts) {
+  if (!ts) return '';
+  const now = Date.now(), d = new Date(ts), diff = ts - now;
+  const cls = diff < 0 ? 'dl-over' : diff < 86400000 ? 'dl-soon' : '';
+  return `<span class="dl ${cls}">⏰ ${deadlineStr(ts)}</span>`;
+}
 function viewLaunches(status) {
   const items = S.launches.filter(l => l.status === status).sort((a, b) => (b.created || 0) - (a.created || 0));
   const isActive = status === 'active';
@@ -454,9 +464,15 @@ function viewLaunches(status) {
     <div class="list">${items.map(l => {
       const pct = launchPct(l);
       const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
-      return `<a class="item" href="#/launch/${l.id}">
-        <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)}</div>
-        <div class="s"><b>${l.qty} штук</b> · ${d}</div>
+      const proj = S.projects.find(p => p.id === l.projectId);
+      const projFile = proj && (proj.files || []).length ? proj.files[0] : null;
+      let th;
+      if (projFile) { th = thumbHTML(projFile); }
+      else { const pts = (l.items || []).map(it => partById(it.partId)).filter(p => p && p.drawing);
+        th = pts.length ? pts.map(p => thumbHTML(p.drawing)).join('') : '<span class="thumb none"></span>'; }
+      return `<a class="item hasth" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
+        <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div>
+        <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
         ${progressBar(pct, 100)}</div></a>`;
     }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
 }
@@ -466,6 +482,8 @@ function viewLaunchNew() {
   return `<div class="card"><h2>Новый запуск</h2>
     <label>Изделие<select id="lnProj"><option value="">— выберите —</option>${projects.map(p => `<option value="${p.id}">${p.art ? p.art + ' ' : ''}${esc(p.name)}</option>`).join('')}</select></label>
     <label>Тираж, шт<input id="lnQty" type="number" min="1" value="1" inputmode="numeric"></label>
+    <label>Срочность<select id="lnPri"><option value="normal">Обычная</option><option value="urgent">Срочная</option><option value="asap">Очень срочная</option><option value="low">Несрочная</option></select></label>
+    <label>Готово к (дата и время)<input id="lnDeadline" type="datetime-local"></label>
     <div id="lnPreview"></div>
     ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
     <div class="btns"><button class="primary" data-act="createLaunch">Запустить</button> <a href="#/progress">Отмена</a></div></div>`;
@@ -481,8 +499,8 @@ function viewLaunch(id) {
     ${!isActive && can('launches', 2) ? `<button data-act="reopenLaunch" data-arg="${l.id}">Вернуть в работу</button>` : ''}
     <a class="btn" href="#/print/${l.id}">🖨 Печать</a>
     </div>
-    <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)}</h2>
-    <div class="s"><b>${l.qty} штук</b> · ${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}</div>
+    <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)} ${priTag(l.priority)}</h2>
+    <div class="s"><b>${l.qty} штук</b> · ${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}${l.deadline ? ` · ${deadlineTag(l.deadline)}` : ''}</div>
     <div style="margin:12px 0">${progressBar(pct, 100)}</div>
     <h3>Детали</h3>
     ${(l.items || []).map(it => {
@@ -1012,6 +1030,9 @@ const ACT = {
   async delMachine(id) { if (confirm('Удалить станок из списка?')) await B.remove('machines', id); },
   async createLaunch() {
     const projId = $('#lnProj').value, qty = parseInt($('#lnQty').value) || 0;
+    const pri = $('#lnPri') ? $('#lnPri').value : 'normal';
+    const dlVal = $('#lnDeadline') ? $('#lnDeadline').value : '';
+    const deadline = dlVal ? new Date(dlVal).getTime() : '';
     formErr = '';
     if (!projId) formErr = 'Выберите изделие';
     else if (qty < 1) formErr = 'Тираж должен быть ≥ 1';
@@ -1023,7 +1044,7 @@ const ACT = {
       return { partId: it.partId, partArt: pt ? pt.art : '', partName: pt ? pt.name : 'удалена', qtyPer: parseInt(it.qty) || 1, qtyTotal: (parseInt(it.qty) || 1) * qty };
     });
     if (!items.length) { formErr = 'В изделии нет деталей'; render(); return; }
-    const data = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login, items };
+    const data = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, priority: pri, deadline, status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login, items };
     const id = await B.save('launches', null, data);
     toast('Запуск создан'); location.hash = '#/launch/' + id;
   },
