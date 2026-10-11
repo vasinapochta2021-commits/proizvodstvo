@@ -173,6 +173,26 @@ function refreshCalc() { if (draft && draft.calc) document.querySelectorAll('[da
 function getPath(o, p) { return p.split('.').reduce((a, k) => (a == null ? a : a[k]), o); }
 function setPath(o, p, v) { const ks = p.split('.'); const last = ks.pop(); const t = ks.reduce((a, k) => (a[k] == null ? (a[k] = {}) : a[k]), o); t[last] = v; }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+function showModal(title, bodyHTML, buttons) {
+  const m = $('#modal'); m.hidden = false;
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = bodyHTML;
+  $('#modalBtns').innerHTML = buttons.map(b =>
+    `<button class="${b.cls || ''}" data-act="${b.act}"${b.arg ? ' data-arg="' + b.arg + '"' : ''}>${esc(b.label)}</button>`
+  ).join('');
+}
+function closeModal() { const m = $('#modal'); if (m) m.hidden = true; }
+async function doCreateLaunch(projId, proj, qty, pri, deadline) {
+  const items = (proj.items || []).map(it => {
+    const pt = partById(it.partId);
+    return { partId: it.partId, partArt: pt ? pt.art : '', partName: pt ? pt.name : '', qtyPer: parseInt(it.qty) || 1, qtyTotal: (parseInt(it.qty) || 1) * qty };
+  });
+  const id = 'ln' + Date.now();
+  const rec = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, priority: pri || 'normal', deadline: deadline || '', status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login || '', items };
+  await B.save('launches', id, rec);
+  toast('Запуск создан');
+  location.hash = '#/launch/' + id;
+}
 function route() { const h = location.hash.replace(/^#\/?/, ''); const [path, qs] = h.split('?'); return { seg: path.split('/').filter(Boolean), q: new URLSearchParams(qs || '') }; }
 const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru');
 const partById = id => S.parts.find(p => p.id === id);
@@ -455,12 +475,41 @@ function deadlineTag(ts) {
   const cls = diff < 0 ? 'dl-over' : diff < 86400000 ? 'dl-soon' : '';
   return `<span class="dl ${cls}">⏰ ${deadlineStr(ts)}</span>`;
 }
+const PRI_ORDER = { asap: 0, urgent: 1, normal: 2, low: 3 };
+const SORT_MODES = [
+  { id: 'pri', label: 'Срочность' },
+  { id: 'deadline', label: 'Дедлайн' },
+  { id: 'date', label: 'Дата' },
+  { id: 'alpha', label: 'Алфавит' },
+  { id: 'progress', label: 'Прогресс' }
+];
+let launchSort = 'date', launchSortDir = -1; // -1 = desc (новые сверху)
+function sortLaunches(items) {
+  const s = launchSort, d = launchSortDir;
+  return items.slice().sort((a, b) => {
+    let r = 0;
+    if (s === 'pri') { r = (PRI_ORDER[a.priority] ?? 2) - (PRI_ORDER[b.priority] ?? 2); }
+    else if (s === 'deadline') { r = (a.deadline || Infinity) - (b.deadline || Infinity); }
+    else if (s === 'date') { r = (a.created || 0) - (b.created || 0); }
+    else if (s === 'alpha') { r = String(a.projectName || '').localeCompare(String(b.projectName || ''), 'ru'); }
+    else if (s === 'progress') { r = launchPct(a) - launchPct(b); }
+    if (r === 0) r = (a.created || 0) - (b.created || 0);
+    return r * d;
+  });
+}
 function viewLaunches(status) {
-  const items = S.launches.filter(l => l.status === status).sort((a, b) => (b.created || 0) - (a.created || 0));
+  const filtered = S.launches.filter(l => l.status === status);
+  const items = sortLaunches(filtered);
   const isActive = status === 'active';
   const title = isActive ? 'В работе' : 'Готовые';
+  const sortBtns = SORT_MODES.map(m => {
+    const active = launchSort === m.id;
+    const arrow = active ? (launchSortDir === 1 ? ' ↑' : ' ↓') : '';
+    return `<button class="chip${active ? ' active' : ''}" data-act="setSort" data-arg="${m.id}">${m.label}${arrow}</button>`;
+  }).join('');
   return `<h1>${title}</h1>
     ${isActive && can('launches', 2) ? `<div class="bar"><div class="grow"></div><a class="btn primary" href="#/launch-new">+ Запуск</a></div>` : ''}
+    ${filtered.length > 1 ? `<div class="sort-bar">${sortBtns}</div>` : ''}
     <div class="list">${items.map(l => {
       const pct = launchPct(l);
       const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
@@ -1039,14 +1088,51 @@ const ACT = {
     if (formErr) { render(); return; }
     const proj = S.projects.find(p => p.id === projId);
     if (!proj) { formErr = 'Изделие не найдено'; render(); return; }
-    const items = (proj.items || []).map(it => {
-      const pt = partById(it.partId);
-      return { partId: it.partId, partArt: pt ? pt.art : '', partName: pt ? pt.name : 'удалена', qtyPer: parseInt(it.qty) || 1, qtyTotal: (parseInt(it.qty) || 1) * qty };
+    // проверить дубликат
+    const dup = S.launches.find(l => l.projectId === projId && l.status === 'active');
+    if (dup && !$('#lnForce')) {
+      showModal('Такое изделие уже в работе',
+        `<p><b>${esc(proj.art ? proj.art + ' ' : '')}${esc(proj.name)}</b> — активный запуск на <b>${dup.qty} штук</b> (${new Date(dup.created).toLocaleDateString('ru-RU')})</p>`,
+        [
+          { label: 'Создать отдельный запуск', act: 'launchForce', cls: 'primary' },
+          { label: 'Объединить (+' + qty + ' шт к существующему)', act: 'launchMerge', arg: dup.id },
+          { label: 'Отмена', act: 'modalClose' }
+        ]);
+      return;
+    }
+    await doCreateLaunch(projId, proj, qty, pri, deadline);
+  },
+  async launchForce() {
+    closeModal();
+    const projId = $('#lnProj').value, qty = parseInt($('#lnQty').value) || 0;
+    const pri = $('#lnPri') ? $('#lnPri').value : 'normal';
+    const dlVal = $('#lnDeadline') ? $('#lnDeadline').value : '';
+    const deadline = dlVal ? new Date(dlVal).getTime() : '';
+    const proj = S.projects.find(p => p.id === projId);
+    if (!proj) return;
+    await doCreateLaunch(projId, proj, qty, pri, deadline);
+  },
+  async launchMerge(dupId) {
+    closeModal();
+    const qty = parseInt($('#lnQty').value) || 0;
+    const dup = S.launches.find(l => l.id === dupId);
+    if (!dup) return;
+    const d = clone(dup);
+    const oldQty = d.qty;
+    d.qty = oldQty + qty;
+    d.items = (d.items || []).map(it => {
+      const newTotal = it.qtyPer * d.qty;
+      return Object.assign({}, it, { qtyTotal: newTotal });
     });
-    if (!items.length) { formErr = 'В изделии нет деталей'; render(); return; }
-    const data = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, priority: pri, deadline, status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login, items };
-    const id = await B.save('launches', null, data);
-    toast('Запуск создан'); location.hash = '#/launch/' + id;
+    await B.save('launches', dupId, d);
+    toast('Объединено: ' + oldQty + ' + ' + qty + ' = ' + d.qty + ' шт');
+    location.hash = '#/launch/' + dupId;
+  },
+  modalClose() { closeModal(); },
+  setSort(s) {
+    if (launchSort === s) { launchSortDir *= -1; }
+    else { launchSort = s; launchSortDir = s === 'date' ? -1 : 1; }
+    render();
   },
   async finishLaunch(id) {
     if (!confirm('Завершить запуск? Он переедет в «Готовые».')) return;
