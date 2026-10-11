@@ -211,7 +211,8 @@ function viewProjects() {
   const items = S.projects.filter(p => !q || (p.art + ' ' + p.name).toLowerCase().includes(q)).sort(byName);
   return `<h1>Изделия</h1>${listBar('Поиск по названию, артикулу', '#/project/new', can('catalog', 2), '+ Изделие')}
     <div class="list">${items.map(p => `<a class="item hasth" href="#/project/${p.id}">${thumbHTML(projThumb(p))}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div></div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
+      <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div>
+      ${(() => { const hn = (p.items || []).map(i => { const pt = partById(i.partId); return pt && pt.notePri === 'high' && String(pt.note || '').trim() ? pt : null; }).filter(Boolean); return hn.length ? hn.map(pt => `<div class="s s-high">⚠ ${esc(pt.art || pt.name)}: ${clip(String(pt.note).replace(/\s+/g, ' ').trim(), 100)}</div>`).join('') : ''; })()}</div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
 }
 function fileBlock(meta, key, dis) {
   if (!meta) return '<div class="file"><span class="muted">нет файла</span></div>';
