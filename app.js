@@ -14,14 +14,15 @@ const num = x => { const v = parseFloat(String(x == null ? '' : x).replace(',', 
 const fmt = (v, d) => (isFinite(v) ? v : 0).toLocaleString('ru-RU', { maximumFractionDigits: d == null ? 2 : d });
 
 /* ───────── Права ───────── */
-const BLOCKS = { catalog: 'Каталог (детали, изделия)', launches: 'Запуски', reports: 'Вечерние отчёты', prices: 'Цены и суммы' };
+const BLOCKS = { catalog: 'Каталог (детали, изделия)', launches: 'Запуски', reports: 'Отчёты', prices: 'Цены и суммы' };
 const LEVELS = ['нет', 'смотреть', 'править', 'удалять'];
+const SECTIONS = { mech: 'Мехобработка', lock: 'Слесарный цех' };
 const TPL = {
-  operator: { name: 'Оператор', perms: { catalog: 1, launches: 1, reports: 2, prices: 0 } },
-  locksmith: { name: 'Слесарь', perms: { catalog: 1, launches: 1, reports: 1, prices: 0 } },
-  manager: { name: 'Руководитель', perms: { catalog: 3, launches: 3, reports: 3, prices: 3 } },
-  accountant: { name: 'Бухгалтер', perms: { catalog: 0, launches: 1, reports: 0, prices: 1 } },
-  viewer: { name: 'Только просмотр', perms: { catalog: 1, launches: 1, reports: 1, prices: 0 } }
+  operator: { name: 'Оператор', perms: { catalog: 1, launches: 1, reports: 2, prices: 0 }, sections: { mech: true, lock: false } },
+  locksmith: { name: 'Слесарь', perms: { catalog: 1, launches: 1, reports: 2, prices: 0 }, sections: { mech: false, lock: true } },
+  manager: { name: 'Руководитель', perms: { catalog: 3, launches: 3, reports: 3, prices: 3 }, sections: { mech: true, lock: true } },
+  accountant: { name: 'Бухгалтер', perms: { catalog: 0, launches: 1, reports: 0, prices: 1 }, sections: { mech: false, lock: false } },
+  viewer: { name: 'Только просмотр', perms: { catalog: 1, launches: 1, reports: 1, prices: 0 }, sections: { mech: false, lock: false } }
 };
 const SETUP_TYPES = ['токарный', 'фрезерный', 'токарно-фрезерный'];
 const guessType = name => /nex[us]{1,2}\s?55|токарно-фрез/i.test(name) ? 'токарно-фрезерный' : /фрез|mill/i.test(name) ? 'фрезерный' : /токар|lathe|tc\s?-?\d|[cs]k\s?-?\d|ts\s?-?\d/i.test(name) ? 'токарный' : '';
@@ -31,6 +32,7 @@ const SEED_MACHINES = ['Metalltec TC45', 'Metalltec Nexus 55', 'Metalltec CK-36'
 
 const S = { me: null, users: [], machines: [], parts: [], projects: [], launches: [], reports: [], ready: {}, denied: {} };
 function can(b, l) { const m = S.me; if (!m) return false; if (m.isAdmin) return true; return ((m.perms || {})[b] || 0) >= l; }
+function canSection(sec) { const m = S.me; if (!m) return false; if (m.isAdmin) return true; return !!(m.sections && m.sections[sec]); }
 
 /* ───────── Калькулятор материала ───────── */
 // [id, название, плотность г/см³, другие написания для поиска]
@@ -212,7 +214,7 @@ const CAT_SORT_PROJ = [
   { id: 'count', label: 'Кол-во деталей' }
 ];
 let catSort = { parts: { key: 'alpha', dir: 1 }, projects: { key: 'alpha', dir: 1 } };
-let viewMode = { parts: 'full', projects: 'full', active: 'full' };
+let viewMode = { parts: 'compact', projects: 'compact', active: 'compact' };
 const expandedCards = new Set();
 function viewToggleBtn(section) {
   const isFull = viewMode[section] === 'full';
@@ -450,7 +452,8 @@ function viewTeam() {
       <div><div class="muted">Логин</div><div class="mono">${esc(u.login)}</div></div></div>
     <div style="margin:6px 0"><label style="display:inline-block;margin-right:16px"><input type="checkbox" data-u="${u.id}" data-f="active" ${u.active ? 'checked' : ''} ${u.id === S.me.uid ? 'disabled' : ''}>Активен</label>
       <label style="display:inline-block"><input type="checkbox" data-u="${u.id}" data-f="isAdmin" ${u.isAdmin ? 'checked' : ''} ${u.id === S.me.uid ? 'disabled' : ''}>Администратор</label></div>
-    <div class="perms">${Object.keys(BLOCKS).map(b => permSel(u, b)).join('')}<label>Применить шаблон<select data-u="${u.id}" data-f="tpl">${tplOpts}</select></label></div></div>`).join('')}
+    <div class="perms">${Object.keys(BLOCKS).map(b => permSel(u, b)).join('')}<label>Применить шаблон<select data-u="${u.id}" data-f="tpl">${tplOpts}</select></label></div>
+    <div class="sections"><span class="sections-label">Редактирование отчётов:</span>${Object.keys(SECTIONS).map(s => `<label style="display:inline-block;margin-right:14px"><input type="checkbox" data-u="${u.id}" data-f="sections.${s}" ${(u.sections || {})[s] ? 'checked' : ''}>${SECTIONS[s]}</label>`).join('')}</div></div>`).join('')}
   <div class="card"><h2>Станки</h2>
     ${S.machines.slice().sort(byName).map(m => `<div class="step"><label>Название<input data-m="${m.id}" value="${esc(m.name)}"></label><button class="x danger" data-act="delMachine" data-arg="${m.id}">✕</button></div>`).join('') || '<p class="muted">Список пуст.</p>'}
     <div class="bar"><div class="grow"><input id="newMachine" placeholder="Новый станок"></div><button data-act="addMachine">Добавить</button>
@@ -1190,7 +1193,8 @@ const ACT = {
     else if (pass.length < 6) formErr = 'Пароль — от 6 символов';
     if (!formErr) {
       try {
-        await B.createUser(login, pass, { name, active: true, isAdmin: false, perms: clone((TPL[tpl] || TPL.viewer).perms), createdAt: Date.now() });
+        const tplData = TPL[tpl] || TPL.viewer;
+        await B.createUser(login, pass, { name, active: true, isAdmin: false, perms: clone(tplData.perms), sections: clone(tplData.sections || {}), createdAt: Date.now() });
         toast('Пользователь создан'); return;
       } catch (e) { formErr = e.code === 'auth/email-already-in-use' ? 'Такой логин уже есть' : e.code === 'auth/weak-password' ? 'Слишком простой пароль' : 'Ошибка: ' + (e.message || e); }
     }
@@ -1376,8 +1380,9 @@ async function userChange(t) {
   const f = t.dataset.f;
   if (f === 'active' || f === 'isAdmin') n[f] = t.checked;
   else if (f === 'name') n.name = t.value.trim() || u.name;
-  else if (f === 'tpl') { if (!TPL[t.value]) return; n.perms = clone(TPL[t.value].perms); }
+  else if (f === 'tpl') { if (!TPL[t.value]) return; n.perms = clone(TPL[t.value].perms); if (TPL[t.value].sections) n.sections = clone(TPL[t.value].sections); }
   else if (f.startsWith('perms.')) n.perms[f.slice(6)] = +t.value;
+  else if (f.startsWith('sections.')) { n.sections = n.sections || {}; n.sections[f.slice(9)] = t.checked; }
   await B.save('users', u.id, n); toast('Сохранено');
 }
 window.addEventListener('hashchange', () => { listQuery = ''; render(); });
