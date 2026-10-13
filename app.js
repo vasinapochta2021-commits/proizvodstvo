@@ -841,7 +841,29 @@ function hydrate() {
   document.querySelectorAll('[data-bf]:not([data-busy])').forEach(el => {
     el.dataset.busy = '1'; const meta = pvMeta[el.dataset.bf];
     if (!meta || !can('catalog', 2) || thumbDone.has(meta.id)) return;
-    bfChain = bfChain.then(async () => { try { await backfillThumb(meta, await fileBlob(meta)); } catch (e) { } });
+    bfChain = bfChain.then(async () => {
+      try {
+        const blob = await fileBlob(meta);
+        // Для фото — сразу показываем превью в миниатюре, не ждём backfill
+        if (isImg(meta) && el.isConnected && !meta.thumb) {
+          const url = URL.createObjectURL(blob);
+          const img = document.createElement('img');
+          img.className = el.className.replace('none', '').trim() || 'thumb';
+          img.src = url;
+          if (el.dataset.act) { img.dataset.act = el.dataset.act; img.dataset.arg = el.dataset.arg; }
+          el.replaceWith(img);
+        }
+        await backfillThumb(meta, blob);
+        // После генерации — обновляем DOM напрямую, если элемент ещё на месте
+        if (meta.thumb && el.isConnected) {
+          const img = document.createElement('img');
+          img.className = el.className.replace('none', '').trim() || 'thumb';
+          img.src = meta.thumb;
+          if (el.dataset.act) { img.dataset.act = el.dataset.act; img.dataset.arg = el.dataset.arg; }
+          el.replaceWith(img);
+        }
+      } catch (e) { }
+    });
   });
   document.querySelectorAll('[data-pv]:not([data-busy])').forEach(el => {
     el.dataset.busy = '1'; const meta = pvMeta[el.dataset.pv]; if (!meta) return;
