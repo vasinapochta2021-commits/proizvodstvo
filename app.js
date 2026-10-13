@@ -216,6 +216,19 @@ const CAT_SORT_PROJ = [
 let catSort = { parts: { key: 'alpha', dir: 1 }, projects: { key: 'alpha', dir: 1 } };
 let viewMode = { parts: 'compact', projects: 'compact', active: 'compact' };
 const expandedCards = new Set();
+let openReportLaunch = null; // id запуска, в котором открыта панель отчёта
+let openReportSections = { mech: true, lock: true }; // какие разделы развёрнуты
+const expandedReportStages = new Set(); // стадии, развёрнутые в полную форму вручную
+function stageSection(st) {
+  if (st.key.startsWith('setup_') || st.key.startsWith('finish_')) return 'mech';
+  return 'lock';
+}
+function hasStageReport(launchId, partId, stageKey) {
+  return S.reports.some(r => r.launchId === launchId && (r.entries || []).some(e => e.partId === partId && e.stageKey === stageKey && e.done > 0));
+}
+function machineOptions() {
+  return S.machines.slice().sort(byName).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+}
 function viewToggleBtn(section) {
   const isFull = viewMode[section] === 'full';
   return `<button class="chip view-toggle" data-act="toggleView" data-arg="${section}" title="${isFull ? 'Компактный вид' : 'Подробный вид'}">${isFull ? '⊟ Кратко' : '⊞ Подробно'}</button>`;
@@ -669,8 +682,85 @@ function viewLaunch(id) {
         <div class="li-hdr pi">${pt ? thumbHTML(pt.drawing, !!pt.drawing) : ''}<div class="tx2"><a href="#/part/${it.partId}">${it.partArt ? `<span class="art">${esc(it.partArt)}</span>` : ''}${esc(it.partName)}</a><div class="s"><b>${it.qtyTotal} штук</b> (${it.qtyPer} на изделие)</div></div></div>
         ${noteHTML}${stagesHTML}</div>`;
     }).join('')}
+    ${isActive && can('reports', 1) ? reportPanel(l, done) : ''}
     <a href="#/progress">← Назад</a></div>`;
 }
+/* ───────── Панель отчёта внутри запуска ───────── */
+function reportPanel(l, done) {
+  const isOpen = openReportLaunch === l.id;
+  const canEdit = can('reports', 2);
+  if (!isOpen) {
+    return `<div class="rpt-panel-toggle"><button class="primary" data-act="toggleReportPanel" data-arg="${l.id}">📋 Отчёт</button></div>`;
+  }
+  // Собрать все этапы по деталям и разбить на mech / lock
+  const mechRows = [], lockRows = [];
+  (l.items || []).forEach(it => {
+    const pt = partById(it.partId);
+    if (!pt) return;
+    const stages = partStages(pt);
+    const mechStages = [], lockStages = [];
+    stages.forEach(st => {
+      const d = done[it.partId + '_' + st.key] || 0;
+      const remain = it.qtyTotal - d;
+      if (remain <= 0) return;
+      const obj = { ...st, done: d, remain, partId: it.partId, qtyTotal: it.qtyTotal };
+      if (stageSection(st) === 'mech') mechStages.push(obj);
+      else lockStages.push(obj);
+    });
+    if (mechStages.length) mechRows.push({ it, pt, stages: mechStages });
+    if (lockStages.length) lockRows.push({ it, pt, stages: lockStages });
+  });
+
+  const renderSection = (secKey, title, rows) => {
+    const expanded = openReportSections[secKey];
+    const editable = canEdit && canSection(secKey);
+    return `<div class="rpt-section">
+      <div class="rpt-sec-hdr" data-act="toggleReportSection" data-arg="${secKey}">
+        <span>${expanded ? '▾' : '▸'} ${title}</span>
+        ${!editable && canEdit ? '<span class="muted" style="font-size:12px;margin-left:8px">только просмотр</span>' : ''}
+      </div>
+      ${expanded ? (rows.length ? rows.map(r => {
+        const noteHTML = r.pt.notePri === 'high' && r.pt.note ? `<div class="s s-high" style="margin:2px 0">⚠ ${esc(r.pt.note)}</div>` : '';
+        return `<div class="rpt-part">
+          <div class="rpt-part-hdr"><b>${r.pt.art ? `<span class="art">${esc(r.pt.art)}</span>` : ''}${esc(r.pt.name)}</b> · ${r.it.qtyTotal} шт</div>
+          ${noteHTML}
+          ${r.stages.map(st => {
+            const stId = l.id + '_' + st.partId + '_' + st.key;
+            const hadReport = hasStageReport(l.id, st.partId, st.key);
+            const isFull = !hadReport || expandedReportStages.has(stId);
+            const isMech = secKey === 'mech';
+            const machOpts = isMech && isFull ? machineOptions() : '';
+            return `<div class="rpt-stage">
+            <div class="rpt-stage-info"><span>${esc(st.label)}</span><span class="muted">осталось ${st.remain} шт</span></div>
+            ${progressBar(st.done, st.qtyTotal)}
+            ${editable ? `<div class="rpt-fields">
+              <label>Сделано, шт<input class="rpt-done" type="number" min="0" max="${st.remain}" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" data-sec="${secKey}" inputmode="numeric" value="0"></label>
+              ${isFull && isMech ? `<label>Время на деталь, мин<input class="rpt-time" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder="0" inputmode="decimal"></label>
+              <label>Станок<select class="rpt-machine" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}"><option value="">—</option>${machOpts}</select></label>
+              <label>Программа<input class="rpt-prog" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder=""></label>` : ''}
+              ${isFull ? `<label>Примечание<input class="rpt-note" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder=""></label>` : ''}
+              ${hadReport && !expandedReportStages.has(stId) ? '' : ''}
+              ${hadReport && !isFull ? `<button class="link" data-act="expandReportStage" data-arg="${stId}" style="font-size:12px;margin-top:2px">▾ Подробнее</button>` : ''}
+              ${!hadReport ? '<span class="rpt-first-tag">первый отчёт</span>' : ''}
+            </div>` : ''}
+          </div>`;
+          }).join('')}
+        </div>`;
+      }).join('') : '<p class="muted" style="margin:4px 0 8px">Все операции завершены.</p>') : ''}
+    </div>`;
+  };
+
+  return `<div class="rpt-panel">
+    <div class="rpt-panel-hdr">
+      <h3 style="margin:0">📋 Отчёт</h3>
+      <button class="link" data-act="toggleReportPanel" data-arg="${l.id}">✕ Закрыть</button>
+    </div>
+    ${renderSection('mech', 'Мехобработка', mechRows)}
+    ${renderSection('lock', 'Слесарный цех', lockRows)}
+    ${canEdit ? `<button class="primary" data-act="submitInlineReport" data-arg="${l.id}" style="margin-top:12px">Сохранить отчёт</button>` : ''}
+  </div>`;
+}
+
 // Все этапы детали: сетапы, слесарка, закалка, покрытие
 function partStages(pt) {
   if (!pt) return [];
@@ -1279,6 +1369,46 @@ const ACT = {
   toggleExpand(id) {
     if (expandedCards.has(id)) expandedCards.delete(id); else expandedCards.add(id);
     render();
+  },
+  toggleReportPanel(id) {
+    openReportLaunch = openReportLaunch === id ? null : id;
+    render();
+  },
+  toggleReportSection(sec) {
+    openReportSections[sec] = !openReportSections[sec];
+    render();
+  },
+  expandReportStage(stId) {
+    expandedReportStages.add(stId);
+    render();
+  },
+  async submitInlineReport(id) {
+    const inputs = document.querySelectorAll('.rpt-done');
+    const entries = [];
+    inputs.forEach(inp => {
+      const v = parseInt(inp.value) || 0;
+      if (v <= 0) return;
+      const sec = inp.dataset.sec;
+      if (!canSection(sec)) return;
+      const li = inp.dataset.li, pi = inp.dataset.pi, sk = inp.dataset.sk;
+      const entry = { partId: pi, stageKey: sk, done: v, launchId: li, section: sec };
+      // Доп. поля полной формы
+      const sel = (cls) => document.querySelector(`.${cls}[data-li="${li}"][data-pi="${pi}"][data-sk="${sk}"]`);
+      const timeInp = sel('rpt-time');
+      const machInp = sel('rpt-machine');
+      const progInp = sel('rpt-prog');
+      const noteInp = sel('rpt-note');
+      if (timeInp && timeInp.value.trim()) entry.time = parseT(timeInp.value);
+      if (machInp && machInp.value) entry.machine = machInp.value;
+      if (progInp && progInp.value.trim()) entry.program = progInp.value.trim();
+      if (noteInp && noteInp.value.trim()) entry.note = noteInp.value.trim();
+      entries.push(entry);
+    });
+    if (!entries.length) { toast('Нечего сохранять'); return; }
+    const data = { launchId: id, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries };
+    await B.save('reports', null, data);
+    expandedReportStages.clear();
+    toast('Отчёт сохранён'); render();
   },
   async finishLaunch(id) {
     if (!confirm('Завершить запуск? Он переедет в «Готовые».')) return;
