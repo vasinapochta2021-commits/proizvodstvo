@@ -261,6 +261,20 @@ label.chk{margin:4px 0 2px}
 .rpt-fields input[type=text]{width:120px}
 .rpt-fields select{width:140px}
 .rpt-first-tag{font-size:11px;color:var(--acc);background:var(--acc-soft);padding:2px 8px;border-radius:10px;align-self:center;white-space:nowrap}
+/* change history */
+.change-dot{color:#e53935;font-size:10px;margin-left:6px;vertical-align:middle}
+.hist-card h2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hist-new-badge{font-size:11px;color:#fff;background:#e53935;padding:2px 8px;border-radius:10px;font-weight:500}
+.hist-seen-btn{font-size:12px!important;white-space:nowrap}
+.hist-list{display:flex;flex-direction:column;gap:6px}
+.hist-entry{padding:8px 10px;background:var(--bg);border-radius:8px;border-left:3px solid transparent}
+.hist-unseen{border-left-color:#e53935;background:color-mix(in srgb,var(--bg) 92%,#e53935)}
+.hist-meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted);margin-bottom:2px}
+.hist-date{font-weight:500}
+.hist-launch{color:var(--acc)}
+.hist-stage{font-size:14px;font-weight:500;margin-bottom:2px}
+.hist-details{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px}
+.hist-details span{white-space:nowrap}
 @media(max-width:700px){
   .rpt-panel{padding:10px 12px}
   .rpt-stage input{width:64px}

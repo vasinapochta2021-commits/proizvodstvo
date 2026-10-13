@@ -229,6 +229,46 @@ function hasStageReport(launchId, partId, stageKey) {
 function machineOptions() {
   return S.machines.slice().sort(byName).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 }
+function partReportEntries(partId) {
+  // Все записи отчётов по детали, с доп. полями (время, станок, программа, примечание)
+  const entries = [];
+  S.reports.forEach(r => {
+    (r.entries || []).forEach(e => {
+      if (e.partId !== partId) return;
+      if (!e.time && !e.machine && !e.program && !e.note) return; // только записи с доп. данными
+      const launch = S.launches.find(l => l.id === r.launchId);
+      entries.push({ ...e, date: r.date, userName: r.userName, userId: r.userId, created: r.created, launchName: launch ? launch.projectName : '' });
+    });
+  });
+  return entries.sort((a, b) => (b.created || 0) - (a.created || 0));
+}
+function partHasNewChanges(partId) {
+  const pt = partById(partId);
+  if (!pt) return false;
+  const seen = pt.seenChanges || 0;
+  return S.reports.some(r => (r.created || 0) > seen && (r.entries || []).some(e => e.partId === partId && (e.time || e.machine || e.program || e.note)));
+}
+function historySection(p) {
+  const entries = partReportEntries(p.id);
+  if (!entries.length) return '';
+  const hasNew = partHasNewChanges(p.id);
+  const machineById = id => { const m = S.machines.find(x => x.id === id); return m ? m.name : id; };
+  const fmtDate = ts => { if (!ts) return '—'; const d = new Date(ts); return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); };
+  const stageLabel = key => {
+    if (key.startsWith('setup_')) return 'Сетап ' + (parseInt(key.split('_')[1]) + 1);
+    if (key.startsWith('finish_')) return 'Чист. сетап ' + (parseInt(key.split('_')[1]) + 1);
+    if (key.startsWith('lock_')) return 'Слесарка ' + (parseInt(key.split('_')[1]) + 1);
+    if (key === 'harden') return 'Закалка';
+    if (key.startsWith('coat_')) return 'Покрытие ' + (parseInt(key.split('_')[1]) + 1);
+    return key;
+  };
+  return `<div class="card hist-card"><h2>История отчётов${hasNew ? ' <span class="hist-new-badge">новое</span>' : ''}${hasNew ? ` <button class="link hist-seen-btn" data-act="markChangesSeen" data-arg="${p.id}">отметить прочитанным</button>` : ''}</h2>
+    <div class="hist-list">${entries.slice(0, 20).map(e => `<div class="hist-entry${(e.created || 0) > (p.seenChanges || 0) ? ' hist-unseen' : ''}">
+      <div class="hist-meta"><span class="hist-date">${fmtDate(e.created)}</span><span class="hist-user">${esc(e.userName || '—')}</span>${e.launchName ? `<span class="hist-launch">${esc(e.launchName)}</span>` : ''}</div>
+      <div class="hist-stage">${stageLabel(e.stageKey)}${e.done ? ' · ' + e.done + ' шт' : ''}</div>
+      <div class="hist-details">${e.time ? '<span>⏱ ' + esc(String(e.time)) + ' мин</span>' : ''}${e.machine ? '<span>🔧 ' + esc(machineById(e.machine)) + '</span>' : ''}${e.program ? '<span>📄 ' + esc(e.program) + '</span>' : ''}${e.note ? '<span>💬 ' + esc(e.note) + '</span>' : ''}</div>
+    </div>`).join('')}${entries.length > 20 ? `<div class="muted" style="padding:6px 0">ещё ${entries.length - 20} записей…</div>` : ''}</div></div>`;
+}
 function viewToggleBtn(section) {
   const isFull = viewMode[section] === 'full';
   return `<button class="chip view-toggle" data-act="toggleView" data-arg="${section}" title="${isFull ? 'Компактный вид' : 'Подробный вид'}">${isFull ? '⊟ Кратко' : '⊞ Подробно'}</button>`;
@@ -296,9 +336,11 @@ function viewParts() {
     ${filtered.length > 1 ? `<div class="sort-bar">${viewToggleBtn('parts')}${catSortBtns(CAT_SORT_PARTS, 'parts')}</div>` : `<div class="sort-bar">${viewToggleBtn('parts')}</div>`}
     <div class="list${compact ? ' list-compact' : ''}">${items.map(p => {
       const exp = compact && expandedCards.has(p.id);
+      const hasNew = partHasNewChanges(p.id);
+      const newBadge = hasNew ? '<span class="change-dot" title="Новые данные из отчётов">●</span>' : '';
       const titleHtml = compact && !exp
-        ? `<div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}<span class="cname">${esc(p.name)}</span></div>`
-        : `<div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>`;
+        ? `<div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}<span class="cname">${esc(p.name)}</span>${newBadge}</div>`
+        : `<div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}${newBadge}</div>`;
       return `<a class="item hasth${exp ? ' expanded' : ''}" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx">${titleHtml}
       ${compact && !exp ? `<button class="link expand-btn" data-act="toggleExpand" data-arg="${p.id}">▾ Развернуть</button>` : partLines(p)}${exp ? `<button class="link expand-btn" data-act="toggleExpand" data-arg="${p.id}">▴ Свернуть</button>` : ''}</div></a>`;
     }).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
@@ -418,6 +460,7 @@ function viewPart() {
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
     ${dis ? '' : '<button data-act="addStep">+ Операция</button>'}</div>
   ${used.length ? `<div class="card"><h2>Входит в изделия</h2>${used.map(u => `<a href="#/project/${u.id}">${esc(u.name)}</a>`).join('<br>')}</div>` : ''}
+  ${p.id ? historySection(p) : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
   <div class="bar">${dis ? '' : '<button class="primary" data-act="savePart">Сохранить</button>'}
     ${p.id && can('catalog', 3) ? '<button class="danger" data-act="delPart">Удалить</button>' : ''}</div>`;
@@ -1380,6 +1423,13 @@ const ACT = {
   },
   expandReportStage(stId) {
     expandedReportStages.add(stId);
+    render();
+  },
+  async markChangesSeen(partId) {
+    const pt = partById(partId);
+    if (!pt) return;
+    await B.save('parts', partId, { ...pt, seenChanges: Date.now() });
+    toast('Отмечено как прочитанное');
     render();
   },
   async submitInlineReport(id) {
