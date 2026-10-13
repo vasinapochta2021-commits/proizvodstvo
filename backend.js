@@ -34,6 +34,14 @@
       const r = await db.collection(col).add(data); return r.id;
     },
     async remove(col, id) { await db.collection(col).doc(id).delete(); },
+    // Разовый запрос (без подписки): where — [поле, значение], orderBy — по убыванию, limit
+    async list(col, o) {
+      o = o || {}; let q = db.collection(col);
+      if (o.where) q = q.where(o.where[0], '==', o.where[1]);
+      if (o.orderBy) q = q.orderBy(o.orderBy, 'desc');
+      if (o.limit) q = q.limit(o.limit);
+      const s = await q.get(); return s.docs.map(d => Object.assign({ id: d.id }, d.data()));
+    },
 
     // Админ создаёт пользователя через вторую копию приложения, чтобы не выйти самому.
     async createUser(login, pass, profile) {

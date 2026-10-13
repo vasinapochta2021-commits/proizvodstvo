@@ -36,6 +36,13 @@
       col(c)[id] = d; emit(c); return id;
     },
     async remove(c, id) { delete col(c)[id]; emit('' + c); },
+    async list(c, o) {
+      o = o || {}; let r = Object.keys(col(c)).map(id => Object.assign({ id }, clean(col(c)[id])));
+      if (o.where) r = r.filter(x => x[o.where[0]] === o.where[1]);
+      if (o.orderBy) r.sort((a, b) => (b[o.orderBy] || 0) - (a[o.orderBy] || 0));
+      if (o.limit) r = r.slice(0, o.limit);
+      return r;
+    },
     async createUser(login, pass, profile) {
       login = login.trim().toLowerCase();
       if (accounts[login]) { const e = new Error('dup'); e.code = 'auth/email-already-in-use'; throw e; }

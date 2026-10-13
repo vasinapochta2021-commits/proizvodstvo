@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
-const VER = 'v10';
+const VER = 'v11';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -192,6 +192,7 @@ async function doCreateLaunch(projId, proj, qty, pri, deadline) {
   const id = 'ln' + Date.now();
   const rec = { projectId: projId, projectArt: proj.art || '', projectName: proj.name, qty, priority: pri || 'normal', deadline: deadline || '', status: 'active', created: Date.now(), createdBy: S.me.uid, createdByName: S.me.name || S.me.login || '', items };
   await B.save('launches', id, rec);
+  await audit('create', 'launch', id, ttlLaunch(rec), []);
   toast('Запуск создан');
   location.hash = '#/launch/' + id;
 }
@@ -433,13 +434,14 @@ function finishSetupsHTML(setups, machines, dis) {
     <label>Время (чч:мм:сс)<input class="tmask" inputmode="numeric" autocomplete="off" placeholder="00:00:00" data-bind="finishSetups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
     <label>Заметка<input data-bind="finishSetups.${i}.note" value="${esc(s.note)}" ${dis}></label>
     <div class="pg"><label>Имя файла ПУ<input data-bind="finishSetups.${i}.program" value="${esc(s.program)}" ${dis}></label></div>
-    ${dis ? '' : `<button class="x danger" data-act="delFinishSetup" data-arg="${i}">✕</button>`}</div>`).join('');
+    ${dis ? '' : `<button class="x danger" data-act="delFinishSetup" data-arg="${i}">✕</button>`}${draft ? timeLogHTML(draft, 'finish_' + i) : ''}</div>`).join('');
 }
 function viewPart() {
   const p = draft, dis = can('catalog', 2) ? '' : 'disabled';
   const used = S.projects.filter(pr => (pr.items || []).some(i => i.partId === p.id));
   const machines = S.machines.slice().sort(byName);
   return `<a class="back" href="#/parts">← Детали</a><h1>${p.id ? 'Деталь' : 'Новая деталь'}</h1>
+  ${p.id ? timeSuggestHTML(p) : ''}
   <div class="hero">
   <div class="card hero-dr"><h2>Чертёж</h2>${fileBlock(p.drawing, 'drawing', dis)}
     ${dis ? '' : '<input type="file" data-file="drawing" accept="application/pdf,image/*">'}
@@ -475,7 +477,7 @@ function viewPart() {
       <label>Время (чч:мм:сс)<input class="tmask" inputmode="numeric" autocomplete="off" placeholder="00:00:00" data-bind="setups.${i}.time" value="${esc(fmtT(s.time))}" ${dis}></label>
       <label>Заметка<input data-bind="setups.${i}.note" value="${esc(s.note)}" ${dis}></label>
       <div class="pg"><label>Имя файла ПУ<input data-bind="setups.${i}.program" value="${esc(s.program)}" ${dis}></label>${dis ? '' : `<button class="x" title="Вставить артикул" data-act="progFromArt" data-arg="${i}">= арт.</button>`}</div>
-      ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
+      ${dis ? '' : `<button class="x danger" data-act="delSetup" data-arg="${i}">✕</button>`}${timeLogHTML(p, 'setup_' + i)}</div>`).join('') || '<p class="muted">Сетапов нет.</p>'}
     ${dis ? '' : '<button data-act="addSetup">+ Сетап</button>'}
     <p class="muted">Сетапы нумеруются по порядку. Время на одну деталь по машинному таймеру: вводите вручную, только цифры — двоеточия расставятся сами (7 мин 15 с = 000715, 1 ч 15 мин 13 с = 011513); позже оно будет обновляться из отчётов операторов.</p></div>
   ${p.harden && p.hardenAllowance ? '<div class="card"><h2>Чистовая обработка после закалки</h2>' + finishSetupsHTML(p.finishSetups || [], machines, dis) + (dis ? '' : '<button data-act="addFinishSetup">+ Чистовой сетап</button>') + '<p class="muted">Сетапы чистовой обработки после закалки. Заполняются так же, как обычные сетапы.</p></div>' : ''}
@@ -484,7 +486,7 @@ function viewPart() {
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
     ${dis ? '' : '<button data-act="addStep">+ Операция</button>'}</div>
   ${used.length ? `<div class="card"><h2>Входит в изделия</h2>${used.map(u => `<a href="#/project/${u.id}">${esc(u.name)}</a>`).join('<br>')}</div>` : ''}
-  ${p.id ? launchSummarySection(p) + historySection(p) : ''}
+  ${p.id ? launchSummarySection(p) + historySection(p) + objAuditBlock(p.id) : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
   <div class="bar">${dis ? '' : '<button class="primary" data-act="savePart">Сохранить</button>'}
     ${p.id && can('catalog', 3) ? '<button class="danger" data-act="delPart">Удалить</button>' : ''}</div>`;
@@ -506,6 +508,7 @@ function viewProject() {
     <label>Заметки по сборке<textarea data-bind="note" ${dis}>${esc(p.note)}</textarea></label>
     ${(p.files || []).map((f, i) => fileBlock(f, 'files.' + i, dis)).join('')}
     ${dis ? '' : '<input type="file" data-file="files" accept="application/pdf,image/*"><p class="muted">Сборочные чертежи: PDF или фото, до 8 МБ.</p>'}</div>
+  ${p.id ? objAuditBlock(p.id) : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
   <div class="bar">${dis ? '' : '<button class="primary" data-act="saveProject">Сохранить</button>'}
     ${p.id && can('catalog', 3) ? '<button class="danger" data-act="delProject">Удалить</button>' : ''}</div>`;
@@ -515,12 +518,13 @@ function viewCalc() {
     <div class="bar" style="margin-top:12px"><button data-act="copyCalc">Скопировать</button><button data-act="resetCalc">Сбросить</button></div></div>`;
 }
 function viewStub(t, d) { return `<h1>${t}</h1><div class="card muted">${d}</div>`; }
-function viewTeam() {
+function viewTeam(sub) {
   if (!S.me.isAdmin) return viewStub('Команда', 'Только для администратора.');
+  if (sub === 'log') return viewAuditLog();
   const users = S.users.slice().sort(byName);
   const tplOpts = '<option value="">— шаблон —</option>' + Object.keys(TPL).map(k => `<option value="${k}">${TPL[k].name}</option>`).join('');
   const permSel = (u, b) => `<label>${BLOCKS[b]}<select data-u="${u.id}" data-f="perms.${b}">${LEVELS.map((n, i) => `<option value="${i}"${((u.perms || {})[b] || 0) === i ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`;
-  return `<h1>Команда</h1>
+  return `<h1>Команда</h1>${teamTabs('')}
   <div class="card"><h2>Добавить человека</h2>
     <div class="row"><label>Имя<input id="nuName"></label><label>Логин (латиница)<input id="nuLogin" autocapitalize="none"></label>
     <label>Пароль (от 6 символов)<input id="nuPass" type="text" autocomplete="off"></label>
@@ -543,7 +547,7 @@ function viewTeam() {
 
 /* ───────── Рендер ───────── */
 const NAV = [['projects', 'Изделия', () => can('catalog', 1)], ['parts', 'Детали', () => can('catalog', 1)],
-  ['progress', 'В работе', () => can('launches', 1)], ['done', 'Готовые', () => can('launches', 1)],
+  ['progress', 'В работе', () => can('launches', 1)], ['done', 'Готовые', () => can('launches', 1)], ['load', 'Станки', () => can('launches', 1)],
   ['reports', 'Отчёты', () => can('reports', 1)],
   ['calc', 'Калькулятор', () => true], ['team', 'Команда', () => S.me && S.me.isAdmin]];
 function render() { renderMain(); setTimeout(hydrate, 0); }
@@ -577,7 +581,8 @@ function renderMain() {
   draft = null; draftKey = null;
   if (sec === 'parts') view.innerHTML = viewParts();
   else if (sec === 'projects') view.innerHTML = viewProjects();
-  else if (sec === 'team') view.innerHTML = viewTeam();
+  else if (sec === 'team') view.innerHTML = viewTeam(r.seg[1]);
+  else if (sec === 'load') view.innerHTML = viewMachineLoad();
   else if (sec === 'progress') view.innerHTML = viewLaunches('active');
   else if (sec === 'done') view.innerHTML = viewLaunches('done');
   else if (sec === 'launch') { view.innerHTML = viewLaunch(r.seg[1]); return; }
@@ -624,16 +629,23 @@ const PRI_LABELS = { asap: '🔴 Очень срочная', urgent: '🟠 Ср�
 const PRI_CSS = { asap: 'pri-asap', urgent: 'pri-urgent', normal: '', low: 'pri-low' };
 function priTag(p) { if (!p || p === 'normal') return ''; return `<span class="tag ${PRI_CSS[p] || ''}">${PRI_LABELS[p] || p}</span>`; }
 function deadlineStr(ts) { if (!ts) return ''; const d = new Date(ts); return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); }
-function deadlineTag(ts) {
-  if (!ts) return '';
-  const now = Date.now(), d = new Date(ts), diff = ts - now;
-  const cls = diff < 0 ? 'dl-over' : diff < 86400000 ? 'dl-soon' : '';
-  return `<span class="dl ${cls}">⏰ ${deadlineStr(ts)}</span>`;
+const HOT_MS = 3 * 864e5; // «горит», если до срока меньше 3 дней
+function dlState(l) { if (!l || !l.deadline || l.status !== 'active') return ''; const d = l.deadline - Date.now(); return d < 0 ? 'over' : d < HOT_MS ? 'hot' : ''; }
+function spanStr(ms) { const a = Math.abs(ms), dd = Math.floor(a / 864e5), h = Math.floor(a % 864e5 / 36e5); return dd ? dd + ' дн' + (h && dd < 3 ? ' ' + h + ' ч' : '') : h ? h + ' ч' : Math.max(1, Math.round(a / 6e4)) + ' мин'; }
+function deadlineTag(l) {
+  if (!l || !l.deadline) return '';
+  const ts = l.deadline;
+  if (l.status === 'done') {
+    const late = (l.finished || 0) - ts;
+    return `<span class="dl">⏰ ${deadlineStr(ts)}</span>${l.finished ? (late > 0 ? ` <span class="dl dl-over">сдан с опозданием на ${spanStr(late)}</span>` : ' <span class="dl dl-ok">сдан в срок</span>') : ''}`;
+  }
+  const st = dlState(l), diff = ts - Date.now();
+  return `<span class="dl ${st ? 'dl-' + st : ''}">⏰ ${deadlineStr(ts)} · ${diff < 0 ? 'просрочен на ' + spanStr(diff) : 'осталось ' + spanStr(diff)}</span>`;
 }
 const PRI_ORDER = { asap: 0, urgent: 1, normal: 2, low: 3 };
 const SORT_ACTIVE = [
   { id: 'pri', label: 'Срочность' },
-  { id: 'deadline', label: 'Дедлайн' },
+  { id: 'deadline', label: 'Срок' },
   { id: 'date', label: 'Дата запуска' },
   { id: 'alpha', label: 'Алфавит' },
   { id: 'progress', label: 'Прогресс' }
@@ -644,7 +656,7 @@ const SORT_DONE = [
   { id: 'alpha', label: 'Алфавит' },
   { id: 'qty', label: 'Тираж' }
 ];
-let sortState = { active: { key: 'date', dir: -1 }, done: { key: 'finished', dir: -1 } };
+let sortState = { active: { key: 'deadline', dir: 1 }, done: { key: 'finished', dir: -1 } };
 function sortLaunches(items, status) {
   const st = sortState[status] || sortState.active;
   const s = st.key, d = st.dir;
@@ -674,7 +686,9 @@ function viewLaunches(status) {
     return `<button class="chip${cur ? ' active' : ''}" data-act="setSort" data-arg="${m.id}">${m.label}${arrow}</button>`;
   }).join('');
   const compact = isActive && viewMode.active === 'compact';
+  const nOver = isActive ? filtered.filter(l => dlState(l) === 'over').length : 0, nHot = isActive ? filtered.filter(l => dlState(l) === 'hot').length : 0;
   return `<h1>${title}</h1>
+    ${nOver || nHot ? `<div class="dl-sum">${nOver ? `<span class="dl dl-over">Просрочено: ${nOver}</span>` : ''}${nHot ? `<span class="dl dl-hot">Горят (меньше 3 дней): ${nHot}</span>` : ''}</div>` : ''}
     ${isActive && can('launches', 2) ? `<div class="bar"><div class="grow"></div><a class="btn primary" href="#/launch-new">+ Запуск</a></div>` : ''}
     ${filtered.length > 1 ? `<div class="sort-bar">${isActive ? viewToggleBtn('active') : ''}${sortBtns}</div>` : (isActive ? `<div class="sort-bar">${viewToggleBtn('active')}</div>` : '')}
     <div class="list${compact ? ' list-compact' : ''}">${items.map(l => {
@@ -688,9 +702,9 @@ function viewLaunches(status) {
         th = pts.length ? pts.map(p => thumbHTML(p.drawing)).join('') : '<span class="thumb none"></span>'; }
       if (compact && !expandedCards.has(l.id)) {
         const rep = lastReportInfo(l.id);
-        return `<div class="item hasth launch-item launch-compact"><a class="lc-link" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div></a>
+        return `<div class="item hasth launch-item launch-compact${dlState(l) ? ' dl-card-' + dlState(l) : ''}"><a class="lc-link" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div></a>
           <div class="tx"><a class="lc-title" href="#/launch/${l.id}"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div></a>
-          <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
+          <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l) : ''}</div>
           ${progressBar(pct, 100)}
           ${rep ? `<div class="s last-rep">📋 ${esc(rep.date)}, ${esc(rep.user)}: ${esc(rep.summary)}</div>` : ''}
           <button class="link expand-btn" data-act="toggleExpand" data-arg="${l.id}">▾ Развернуть</button></div></div>`;
@@ -702,12 +716,13 @@ function viewLaunches(status) {
       }).join('');
       const isExpanded = compact && expandedCards.has(l.id);
       const expandBtn = isExpanded ? `<button class="link expand-btn" data-act="toggleExpand" data-arg="${l.id}">▴ Свернуть</button>` : '';
-      return `<a class="item hasth launch-item${isExpanded ? ' expanded' : ''}" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
+      return `<a class="item hasth launch-item${isExpanded ? ' expanded' : ''}${dlState(l) ? ' dl-card-' + dlState(l) : ''}" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
         <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div>
-        <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
+        <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l) : ''}</div>
         ${progressBar(pct, 100)}${partsInfo}${expandBtn}</div></a>`;
     }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
 }
+function toLocalInput(ts) { if (!ts) return ''; const d = new Date(ts); return localDay(ts) + 'T' + p2(d.getHours()) + ':' + p2(d.getMinutes()); }
 function viewLaunchNew() {
   if (!can('launches', 2)) return viewStub('Нет доступа', 'У вас нет прав на создание запусков.');
   const projects = S.projects.slice().sort(byName);
@@ -715,7 +730,7 @@ function viewLaunchNew() {
     <label>Изделие<select id="lnProj"><option value="">— выберите —</option>${projects.map(p => `<option value="${p.id}">${p.art ? p.art + ' ' : ''}${esc(p.name)}</option>`).join('')}</select></label>
     <label>Тираж, шт<input id="lnQty" type="number" min="1" value="1" inputmode="numeric"></label>
     <label>Срочность<select id="lnPri"><option value="normal">Обычная</option><option value="urgent">Срочная</option><option value="asap">Очень срочная</option><option value="low">Несрочная</option></select></label>
-    <label>Готово к (дата и время)<input id="lnDeadline" type="datetime-local"></label>
+    <label>Срок «нужно к» (дата и время)<input id="lnDeadline" type="datetime-local"></label>
     <div id="lnPreview"></div>
     ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
     <div class="btns"><button class="primary" data-act="createLaunch">Запустить</button> <a href="#/progress">Отмена</a></div></div>`;
@@ -732,7 +747,9 @@ function viewLaunch(id) {
     <a class="btn" href="#/print/${l.id}">🖨 Печать</a>
     </div>
     <h2>${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span> ` : ''}${esc(l.projectName)} ${priTag(l.priority)}</h2>
-    <div class="s"><b>${l.qty} штук</b> · ${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : ''} · ${l.createdByName || ''}${l.deadline ? ` · ${deadlineTag(l.deadline)}` : ''}</div>
+    <div class="s">${[`<b>${l.qty} штук</b>`, l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '', esc(l.createdByName || ''), deadlineTag(l)].filter(Boolean).join(' · ')}</div>
+    ${isActive && can('launches', 2) ? `<div class="ln-edit"><label>Срок «нужно к»<input type="datetime-local" data-ln="${l.id}" data-f="deadline" value="${toLocalInput(l.deadline)}"></label>
+      <label>Срочность<select data-ln="${l.id}" data-f="priority">${[['normal', 'Обычная'], ['urgent', 'Срочная'], ['asap', 'Очень срочная'], ['low', 'Несрочная']].map(([v, n]) => `<option value="${v}"${(l.priority || 'normal') === v ? ' selected' : ''}>${n}</option>`).join('')}</select></label></div>` : ''}
     <div style="margin:12px 0">${progressBar(pct, 100)}</div>
     <h3>Детали</h3>
     ${(l.items || []).map(it => {
@@ -750,7 +767,8 @@ function viewLaunch(id) {
         ${noteHTML}${stagesHTML}</div>`;
     }).join('')}
     ${isActive && can('reports', 1) ? reportPanel(l, done) : ''}
-    <a href="#/progress">← Назад</a></div>`;
+    <a href="#/progress">← Назад</a></div>
+    ${objAuditBlock(l.id)}`;
 }
 /* ───────── Панель отчёта внутри запуска ───────── */
 function reportPanel(l, done) {
@@ -854,6 +872,222 @@ function partStages(pt) {
   if (work.coats.length) work.coats.forEach((c, ci) => stages.push({ key: 'coat_' + ci, label: c, group: 'Покрытие' }));
   return stages;
 }
+/* ───────── Журнал действий ───────── */
+const AUDIT_ACC = { part: 'деталь', project: 'изделие', launch: 'запуск', report: 'отчёт', user: 'сотрудника', machine: 'станок' };
+const AUDIT_KINDS = { part: 'Детали', project: 'Изделия', launch: 'Запуски', report: 'Отчёты', user: 'Команда', machine: 'Станки' };
+const AUDIT_ACT = { create: 'создал', update: 'изменил', delete: 'удалил', finish: 'завершил', reopen: 'вернул в работу', merge: 'объединил' };
+const AUDIT_SKIP = new Set(['id', 'updatedAt', 'updatedBy', 'createdAt', 'created', 'createdBy', 'createdByName', 'seenChanges', 'timeLog', 'timeAck', 'timeSec', 'calc', 'thumb', 'qtyTotal', 'partArt', 'partName']);
+const ttlPart = p => p ? (p.art ? p.art + ' ' : '') + (p.name || '') : '';
+const ttlLaunch = l => l ? (l.projectArt ? l.projectArt + ' ' : '') + (l.projectName || '') + ' · ' + l.qty + ' шт' : '';
+const ttlUser = u => u ? (u.name || '') + (u.login ? ' (' + u.login + ')' : '') : '';
+const isFileMeta = v => v && typeof v === 'object' && v.id && v.name && ('size' in v || 'type' in v);
+function auditFlat(o, pre, out) {
+  out = out || {}; if (!o || typeof o !== 'object') return out;
+  Object.keys(o).forEach(k => {
+    if (k.startsWith('_') || AUDIT_SKIP.has(k)) return;
+    const v = o[k], p = pre ? pre + '.' + k : k;
+    if (isFileMeta(v)) out[p] = v.name;
+    else if (Array.isArray(v)) v.forEach((x, i) => { if (isFileMeta(x)) out[p + '.' + i] = x.name; else if (x && typeof x === 'object') auditFlat(x, p + '.' + i, out); else out[p + '.' + i] = x; });
+    else if (v && typeof v === 'object') auditFlat(v, p, out);
+    else out[p] = v;
+  });
+  return out;
+}
+function auditLabel(kind, path) {
+  const m = path.split('.');
+  const L = { art: 'артикул', name: 'название', mat: 'материал', bought: 'покупная заготовка', harden: 'закалка', hardenType: 'тип закалки', hardenHRC: 'твёрдость HRC', hardenAllowance: 'припуск под чистовую', coat: 'покрытие', note: 'заметка', notePri: 'приоритет заметки', drawing: 'чертёж', type: 'тип', machine: 'станок', time: 'время', program: 'программа', qty: kind === 'project' ? 'кол-во' : 'тираж', partId: 'деталь', priority: 'срочность', deadline: 'срок', status: 'статус', active: 'активен', isAdmin: 'администратор', login: 'логин', qtyPer: 'шт на изделие', projectName: 'изделие', projectArt: 'артикул изделия', projectId: 'изделие', finished: 'завершён' };
+  const P = { setups: 'сетап', finishSetups: 'чист. сетап', steps: 'слесарная операция', items: 'позиция', files: 'файл сборки' };
+  if (m[0] === 'perms') return 'права: ' + (BLOCKS[m[1]] || m[1]);
+  if (m[0] === 'sections') return 'отчёты: ' + (SECTIONS[m[1]] || m[1]);
+  if (m.length >= 2 && /^\d+$/.test(m[1])) return (P[m[0]] || m[0]) + ' ' + (+m[1] + 1) + (m[2] ? ': ' + (L[m[2]] || m[2]) : '');
+  return L[m[0]] || path;
+}
+function auditVal(path, v) {
+  if (v === '' || v == null) return '—';
+  const last = path.split('.').pop();
+  if (/^perms\./.test(path)) return LEVELS[v] || String(v);
+  if (typeof v === 'boolean') return v ? 'да' : 'нет';
+  if (last === 'time' && typeof v === 'number') return fmtT(v);
+  if (last === 'machine') return machineName(v) || 'станок удалён';
+  if (last === 'partId') { const p = partById(v); return p ? ttlPart(p) : 'деталь удалена'; }
+  if ((last === 'deadline' || last === 'finished') && typeof v === 'number') return deadlineStr(v);
+  if (last === 'priority') return (PRI_LABELS[v] || '').replace(/^\S+\s/, '') || 'обычная';
+  if (last === 'status') return v === 'active' ? 'в работе' : v === 'done' ? 'готов' : String(v);
+  if (last === 'notePri') return v === 'high' ? 'важная' : v === 'normal' ? 'обычная' : String(v);
+  return String(v);
+}
+function auditDiff(kind, a, b) {
+  const fa = auditFlat(a || {}), fb = auditFlat(b || {});
+  const out = [];
+  [...new Set([...Object.keys(fa), ...Object.keys(fb)])].forEach(k => {
+    const x = fa[k] == null ? '' : fa[k], y = fb[k] == null ? '' : fb[k];
+    if (String(x) === String(y)) return;
+    out.push({ f: auditLabel(kind, k), a: auditVal(k, x), b: auditVal(k, y) });
+  });
+  return out.slice(0, 60);
+}
+const objAudit = {}, openObjAudit = new Set();
+async function audit(action, kind, objId, title, changes, note) {
+  if (action === 'update' && !(changes || []).length) return;
+  const rec = { ts: Date.now(), uid: S.me.uid, userName: S.me.name || S.me.login || '', action, kind, objId: objId || '', title: title || '', changes: changes || [] };
+  if (note) rec.note = note;
+  try { await B.save('audit', null, rec); } catch (e) { console.warn('audit', e); }
+  if (auditState.rows) auditState.rows.unshift(rec);
+  if (objId && objAudit[objId]) { if (openObjAudit.has(objId)) loadObjAudit(objId); else delete objAudit[objId]; }
+}
+let auditState = { rows: null, loading: false, limit: 300, user: '', kind: '', period: 'week' };
+async function loadAudit() {
+  if (auditState.loading) return; auditState.loading = true; auditState.err = '';
+  try { auditState.rows = await B.list('audit', { orderBy: 'ts', limit: auditState.limit }); }
+  catch (e) { auditState.rows = []; auditState.err = e.message || String(e); }
+  auditState.loading = false; render();
+}
+async function loadObjAudit(id) {
+  objAudit[id] = Object.assign({}, objAudit[id], { loading: true });
+  try { const rows = await B.list('audit', { where: ['objId', id] }); rows.sort((a, b) => b.ts - a.ts); objAudit[id] = { rows }; }
+  catch (e) { objAudit[id] = { rows: [], err: e.message || String(e) }; }
+  render();
+}
+function auditObjLink(r) {
+  const t = esc(r.title || '—');
+  if (r.action === 'delete' && r.kind !== 'report') return `<b>${t}</b>`;
+  const ex = { part: [S.parts, '#/part/'], project: [S.projects, '#/project/'], launch: [S.launches, '#/launch/'], report: [S.launches, '#/launch/'] }[r.kind];
+  return ex && ex[0].some(x => x.id === r.objId) ? `<a href="${ex[1]}${r.objId}">${t}</a>` : `<b>${t}</b>`;
+}
+function auditRowHTML(r, inCard) {
+  const del = r.action === 'delete';
+  const line = c => `<div class="aud-ch"><span class="aud-f">${esc(c.f)}:</span> ${del ? `<span>${esc(c.a)}</span>` : `<span class="aud-a">${esc(c.a)}</span> → <span class="aud-b">${esc(c.b)}</span>`}</div>`;
+  const ch = r.changes || [], N = inCard ? 8 : 5;
+  const when = inCard ? new Date(r.ts).toLocaleDateString('ru-RU') + ' ' + hhmm(r.ts) : hhmm(r.ts);
+  const what = r.kind === 'report' ? 'отчёт' + (inCard ? '' : ' по запуску ' + auditObjLink(r)) : inCard ? '' : (AUDIT_ACC[r.kind] || r.kind) + ' ' + auditObjLink(r);
+  return `<div class="aud-row aud-${r.action}"><div class="aud-hdr"><span class="hist-date">${when}</span> <b>${esc(r.userName || '—')}</b> ${AUDIT_ACT[r.action] || r.action} ${what}${r.note ? ` <span class="muted">(${esc(r.note)})</span>` : ''}</div>
+    ${ch.slice(0, N).map(line).join('')}${ch.length > N ? `<details class="aud-more"><summary>ещё ${ch.length - N}</summary>${ch.slice(N).map(line).join('')}</details>` : ''}</div>`;
+}
+function objAuditBlock(id) {
+  if (!id) return '';
+  const open = openObjAudit.has(id), st = objAudit[id];
+  let body = '';
+  if (open) body = !st || st.loading ? '<p class="muted">Загрузка…</p>' : st.err ? `<p class="err">Не удалось загрузить: ${esc(st.err)}</p>` : st.rows.length ? st.rows.map(r => auditRowHTML(r, true)).join('') : '<p class="muted">Записей пока нет — журнал ведётся с версии v11.</p>';
+  return `<div class="card aud-obj"><h2 class="aud-obj-h" data-act="toggleObjAudit" data-arg="${id}">${open ? '▾' : '▸'} Изменения</h2>${body}</div>`;
+}
+function teamTabs(sub) { return `<div class="sort-bar"><a class="chip${sub !== 'log' ? ' active' : ''}" href="#/team">Люди и права</a><a class="chip${sub === 'log' ? ' active' : ''}" href="#/team/log">Журнал действий</a></div>`; }
+function viewAuditLog() {
+  const st = auditState;
+  if (st.rows === null) { if (!st.loading) setTimeout(loadAudit, 0); return `<h1>Команда</h1>${teamTabs('log')}<p class="muted">Загрузка…</p>`; }
+  const people = [...new Map(st.rows.map(r => [r.uid, r.userName])).entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'ru'));
+  const rows = st.rows.filter(r => (!st.user || r.uid === st.user) && (!st.kind || r.kind === st.kind) && inPeriod({ created: r.ts }, st.period));
+  const days = {}; rows.forEach(r => { const d = localDay(r.ts); (days[d] = days[d] || []).push(r); });
+  return `<h1>Команда</h1>${teamTabs('log')}
+    <div class="aud-filters">
+      <select data-af="user"><option value="">Все люди</option>${people.map(([id, n]) => `<option value="${id}"${st.user === id ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <select data-af="kind"><option value="">Все разделы</option>${Object.keys(AUDIT_KINDS).map(k => `<option value="${k}"${st.kind === k ? ' selected' : ''}>${AUDIT_KINDS[k]}</option>`).join('')}</select>
+      ${JP.map(([k, n]) => `<button class="chip${st.period === k ? ' active' : ''}" data-act="setAuditPeriod" data-arg="${k}">${n}</button>`).join('')}
+      <button class="link" data-act="reloadAudit">↻ Обновить</button>
+    </div>
+    ${st.err ? `<div class="err">Не удалось загрузить журнал: ${esc(st.err)}. Проверьте, что правила Firestore обновлены.</div>` : ''}
+    ${Object.keys(days).sort().reverse().map(d => `<div class="card"><h2>${dayTitle(d)}</h2>${days[d].map(r => auditRowHTML(r, false)).join('')}</div>`).join('') || '<div class="card muted">За выбранный период записей нет.</div>'}
+    ${st.rows.length >= st.limit ? `<button data-act="moreAudit">Загрузить более ранние записи</button>` : ''}`;
+}
+
+/* ───────── Время сетапов из отчётов ───────── */
+function setupRef(p, key) {
+  const m = /^(setup|finish)_(\d+)$/.exec(key); if (!m) return null;
+  const arrKey = m[1] === 'setup' ? 'setups' : 'finishSetups', i = +m[2], su = (p[arrKey] || [])[i];
+  return { arrKey, i, su, label: (m[1] === 'setup' ? 'Сетап ' : 'Чистовой сетап ') + (i + 1) + (su && su.type ? ' · ' + su.type : '') };
+}
+const tMin = x => typeof x === 'number' ? x : parseT(x);
+function timeSuggestions(p) {
+  if (!p) return [];
+  const best = {};
+  S.reports.forEach(r => (r.entries || []).forEach(e => {
+    if (e.partId !== p.id || !e.time || !/^(setup|finish)_/.test(e.stageKey)) return;
+    const ts = repTs(r);
+    if (!best[e.stageKey] || ts > best[e.stageKey].ts) best[e.stageKey] = { ts, time: e.time, who: r.userName, launchId: r.launchId };
+  }));
+  return Object.keys(best).sort().map(k => {
+    const ref = setupRef(p, k); if (!ref || !ref.su) return null;
+    const b = best[k]; if (b.ts <= (ref.su.timeAck || 0)) return null;
+    const cur = tMin(ref.su.time);
+    if (Math.round(cur * 60) === Math.round(b.time * 60)) return null;
+    return Object.assign({ key: k, cur }, ref, b);
+  }).filter(Boolean);
+}
+function timeSuggestHTML(p) {
+  const rec = partById(p.id); if (!rec || !can('catalog', 2)) return '';
+  const list = timeSuggestions(rec); if (!list.length) return '';
+  return `<div class="card tsug"><h2>⏱ Новое время из отчётов</h2>
+    ${list.map(s => { const l = S.launches.find(x => x.id === s.launchId); const d = s.cur ? (s.time - s.cur) / s.cur : 0;
+      return `<div class="tsug-row"><div class="tsug-tx"><b>${esc(s.label)}</b>: в карточке <span class="mono">${s.cur ? fmtT(s.cur) : '—'}</span> → в отчёте <span class="mono">${fmtT(s.time)}</span>${s.cur && Math.abs(d) >= 0.01 ? ` <span class="sm-dev ${d > 0 ? 'sm-slow' : 'sm-fast'}">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>` : ''}
+        <div class="muted">${esc(s.who || '—')} · ${dayTitle(localDay(s.ts)).toLowerCase()} ${hhmm(s.ts)}${l ? ' · ' + esc(ttlLaunch(l)) : ''}</div></div>
+        <div class="btns"><button class="primary" data-act="acceptTime" data-arg="${s.key}">Записать в карточку</button><button data-act="dismissTime" data-arg="${s.key}">Оставить как есть</button></div></div>`; }).join('')}
+    <p class="muted">Прежнее значение сохранится в истории времени сетапа.</p></div>`;
+}
+function timeLogHTML(p, key) {
+  const log = (p.timeLog || []).filter(x => x.key === key);
+  if (!log.length) return '';
+  return `<details class="tlog"><summary>История времени (${log.length})</summary>${log.slice().reverse().map(x => { const l = x.launchId && S.launches.find(y => y.id === x.launchId);
+    return `<div class="tlog-row"><span class="hist-date">${new Date(x.ts).toLocaleDateString('ru-RU')}</span> <span class="mono">${x.from === '' || x.from == null ? '—' : fmtT(tMin(x.from))}</span> → <span class="mono">${fmtT(tMin(x.to))}</span> <span class="muted">· ${x.src === 'report' ? 'из отчёта ' + esc(x.reportBy || '') + (l ? ', ' + esc(ttlLaunch(l)) : '') + '; записал ' + esc(x.by || '') : 'вручную, ' + esc(x.by || '')}</span></div>`; }).join('')}</details>`;
+}
+// Ручная правка времени в карточке → запись в историю
+function logManualTimes(old, p) {
+  if (!old) return;
+  ['setups', 'finishSetups'].forEach(arrKey => (p[arrKey] || []).forEach((su, i) => {
+    const o = (old[arrKey] || [])[i]; if (!o) return;
+    const a = o.time === '' || o.time == null ? '' : Math.round(tMin(o.time) * 60), b = su.time === '' || su.time == null ? '' : Math.round(tMin(su.time) * 60);
+    if (a === b) return;
+    p.timeLog = (p.timeLog || []).concat([{ key: (arrKey === 'setups' ? 'setup_' : 'finish_') + i, from: o.time, to: su.time, ts: Date.now(), by: S.me.name || S.me.login || '', src: 'manual' }]);
+  }));
+}
+
+/* ───────── Загрузка станков ───────── */
+function fmtDur(min) { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? h + ' ч' + (m ? ' ' + m + ' мин' : '') : m + ' мин'; }
+function machineLoadRows() {
+  const rows = [];
+  S.launches.filter(l => l.status === 'active').forEach(l => {
+    const { done } = launchProgress(l);
+    (l.items || []).forEach(it => {
+      const pt = partById(it.partId); if (!pt) return;
+      const add = (key, su, label) => {
+        const remain = Math.max(0, it.qtyTotal - (done[it.partId + '_' + key] || 0)); if (!remain) return;
+        const t = su ? tMin(su.time) : 0;
+        rows.push({ mid: (su && su.machine) || '', l, pt, key, label, remain, total: it.qtyTotal, t, min: t * remain });
+      };
+      const st = pt.setups || [];
+      st.forEach((su, i) => add('setup_' + i, su, 'сетап ' + (i + 1) + (su.type ? ' · ' + su.type : '')));
+      if (!st.length) add('setup_0', null, 'сетапы не заполнены');
+      if (pt.harden && pt.hardenAllowance) (pt.finishSetups || []).forEach((su, i) => add('finish_' + i, su, 'чист. сетап ' + (i + 1) + (su.type ? ' · ' + su.type : '')));
+    });
+  });
+  return rows;
+}
+function viewMachineLoad() {
+  if (!can('launches', 1)) return viewStub('Нет доступа', 'У вас нет доступа к запускам.');
+  const rows = machineLoadRows();
+  const groups = {};
+  S.machines.forEach(m => { groups[m.id] = { id: m.id, name: m.name, rows: [] }; });
+  rows.forEach(r => { const k = r.mid && groups[r.mid] ? r.mid : r.mid ? '_gone' : '_none'; (groups[k] = groups[k] || { id: k, name: k === '_none' ? 'Станок не указан' : 'Станок удалён из списка', rows: [] }).rows.push(r); });
+  const list = Object.values(groups).map(g => Object.assign(g, { min: g.rows.reduce((a, r) => a + r.min, 0), noTime: g.rows.filter(r => !r.t).length }));
+  const real = list.filter(g => !g.id.startsWith('_')).sort((a, b) => b.min - a.min || byName(a, b));
+  const extra = list.filter(g => g.id.startsWith('_') && g.rows.length);
+  const max = Math.max(1, ...real.map(g => g.min));
+  const total = real.reduce((a, g) => a + g.min, 0);
+  const rowHTML = r => `<tr><td><a href="#/part/${r.pt.id}">${esc(ttlPart(r.pt))}</a><div class="muted ml-sub">${esc(r.label)}</div></td>
+    <td><a href="#/launch/${r.l.id}">${esc((r.l.projectArt ? r.l.projectArt + ' ' : '') + r.l.projectName)}</a>${r.l.deadline ? '<div>' + deadlineTag(r.l) + '</div>' : ''}</td>
+    <td>${r.remain} из ${r.total}</td><td class="mono">${r.t ? fmtT(r.t) : '<span class="ml-warn">нет времени</span>'}</td><td class="ml-h">${r.t ? fmtDur(r.min) : '—'}</td></tr>`;
+  const sortRows = rs => rs.slice().sort((a, b) => (a.l.deadline || Infinity) - (b.l.deadline || Infinity) || (a.l.created || 0) - (b.l.created || 0));
+  const card = (g, warn) => `<div class="card ml-card${warn ? ' ml-extra' : ''}">
+    <div class="ml-hdr"><h2>${esc(g.name)}</h2><div class="ml-tot">${g.rows.length && !g.min ? '<span class="ml-warn">часы не посчитаны</span>' : g.rows.length ? fmtDur(g.min) + (g.min >= 480 ? ` <span class="muted">≈ ${(g.min / 480).toFixed(1).replace('.', ',')} смен по 8 ч</span>` : '') : '<span class="muted">очередь пуста</span>'}</div></div>
+    ${warn ? '' : `<div class="ml-bar"><div style="width:${Math.round(g.min / max * 100)}%"></div></div>`}
+    ${g.noTime ? `<div class="ml-warn">⚠ У ${g.noTime} поз. не указано время в карточке — часы по ним не посчитаны</div>` : ''}
+    ${g.rows.length ? `<div class="sm-wrap"><table class="sm-tbl ml-tbl"><thead><tr><th>Деталь</th><th>Запуск</th><th>Осталось, шт</th><th>На 1 шт</th><th>Часов</th></tr></thead><tbody>${sortRows(g.rows).map(rowHTML).join('')}</tbody></table></div>` : ''}</div>`;
+  return `<h1>Загрузка станков</h1>
+    <div class="ml-sum">В очереди всего: <b>${fmtDur(total)}</b> · станков с работой: <b>${real.filter(g => g.rows.length).length}</b> из ${real.length}</div>
+    ${!S.machines.length ? '<div class="warn">Список станков пуст. Заполните его во вкладке «Команда».</div>' : ''}
+    ${extra.map(g => card(g, true)).join('')}
+    ${real.map(g => card(g, false)).join('')}
+    <p class="muted">Часы = время сетапа из карточки детали × сколько штук ещё не сделано по этому сетапу (по отчётам). Учитываются только запуски «В работе».</p>`;
+}
+
 /* ───────── Журнал отчётов ───────── */
 let journalPeriod = 'week';
 const JP = [['today', 'Сегодня'], ['week', '7 дней'], ['month', '30 дней'], ['all', 'Всё']];
@@ -1255,12 +1489,15 @@ async function savePart() {
   p.setups = (p.setups || []).map(s => { const e = s.time === '' || s.time == null || String(s.time).trim() === ''; const sec = e ? '' : Math.round(parseT(s.time) * 60); return Object.assign({}, s, { timeSec: sec, time: e ? '' : sec / 60 }); });
   p.finishSetups = (p.finishSetups || []).map(s => { const e = s.time === '' || s.time == null || String(s.time).trim() === ''; const sec = e ? '' : Math.round(parseT(s.time) * 60); return Object.assign({}, s, { timeSec: sec, time: e ? '' : sec / 60 }); });
   const del = draft._del; delete p._del; stamp(p);
+  const old = p.id ? partById(p.id) : null;
+  logManualTimes(old, p);
   const addTo = route().q.get('addTo');
   const id = await B.save('parts', p.id || null, p);
+  await audit(old ? 'update' : 'create', 'part', id, ttlPart(p), old ? auditDiff('part', old, p) : []);
   await cleanupFiles(); void del;
   if (addTo) {
     const pr = S.projects.find(x => x.id === addTo);
-    if (pr) { const n = clone(pr); n.items = (n.items || []).concat([{ partId: id, qty: 1 }]); stamp(n); await B.save('projects', addTo, n); }
+    if (pr) { const n = clone(pr); n.items = (n.items || []).concat([{ partId: id, qty: 1 }]); stamp(n); await B.save('projects', addTo, n); await audit('update', 'project', addTo, ttlPart(pr), [{ f: 'добавлена деталь', a: '—', b: ttlPart(p) }]); }
     draftKey = null; location.hash = '#/project/' + addTo; return;
   }
   toast('Сохранено'); draftKey = null; location.hash = '#/parts';
@@ -1271,7 +1508,9 @@ async function saveProject(stay) {
   p.name = p.name.trim(); p.art = (p.art || '').trim();
   p.items = (p.items || []).map(i => ({ partId: i.partId, qty: Math.max(1, Math.round(num(i.qty)) || 1) }));
   delete p._del; stamp(p);
+  const old = p.id ? S.projects.find(x => x.id === p.id) : null;
   const id = await B.save('projects', p.id || null, p);
+  await audit(old ? 'update' : 'create', 'project', id, ttlPart(p), old ? auditDiff('project', old, p) : []);
   await cleanupFiles();
   if (!stay) { toast('Сохранено'); draftKey = null; location.hash = '#/projects'; }
   return id;
@@ -1304,7 +1543,7 @@ const ACT = {
     }
     lines.push('Онлайн: ' + navigator.onLine); out.textContent = lines.join('\n');
   },
-  async logout() { S.me = null; openReportLaunch = null; expandedReportStages.clear(); await B.logout(); },
+  async logout() { S.me = null; openReportLaunch = null; expandedReportStages.clear(); auditState.rows = null; Object.keys(objAudit).forEach(k => delete objAudit[k]); openObjAudit.clear(); await B.logout(); },
   addSetup() { draft.setups.push({ type: '', machine: '', program: '', time: '', note: '' }); render(); },
   delSetup(i) { draft.setups.splice(i, 1); render(); },
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
@@ -1324,7 +1563,9 @@ const ACT = {
     const used = S.projects.filter(pr => (pr.items || []).some(i => i.partId === draft.id));
     if (used.length && !confirm('Деталь входит в изделия: ' + used.map(u => u.name).join(', ') + '. Всё равно удалить?')) return;
     for (const f of [draft.drawing].filter(Boolean)) { try { await B.removeFile(f.id); } catch (e) { } }
-    await B.remove('parts', draft.id); draftKey = null; location.hash = '#/parts';
+    const oldP = partById(draft.id);
+    await B.remove('parts', draft.id); await audit('delete', 'part', draft.id, ttlPart(oldP || draft), auditDiff('part', oldP || draft, {}));
+    draftKey = null; location.hash = '#/parts';
   },
   rmFile(key) {
     if (key === 'drawing') { draft._del.push(draft.drawing.id); draft.drawing = null; }
@@ -1348,7 +1589,9 @@ const ACT = {
   delProject: async () => {
     if (!confirm('Удалить изделие «' + draft.name + '»? Детали останутся в каталоге.')) return;
     for (const f of (draft.files || [])) { try { await B.removeFile(f.id); } catch (e) { } }
-    await B.remove('projects', draft.id); draftKey = null; location.hash = '#/projects';
+    const oldPr = S.projects.find(x => x.id === draft.id);
+    await B.remove('projects', draft.id); await audit('delete', 'project', draft.id, ttlPart(oldPr || draft), auditDiff('project', oldPr || draft, {}));
+    draftKey = null; location.hash = '#/projects';
   },
   async copyCalc() {
     const t = calcSummary(draft.calc);
@@ -1365,15 +1608,16 @@ const ACT = {
     if (!formErr) {
       try {
         const tplData = TPL[tpl] || TPL.viewer;
-        await B.createUser(login, pass, { name, active: true, isAdmin: false, perms: clone(tplData.perms), sections: clone(tplData.sections || {}), createdAt: Date.now() });
+        const nuid = await B.createUser(login, pass, { name, active: true, isAdmin: false, perms: clone(tplData.perms), sections: clone(tplData.sections || {}), createdAt: Date.now() });
+        await audit('create', 'user', nuid, name + ' (' + login + ')', [{ f: 'шаблон прав', a: '—', b: tplData.name }]);
         toast('Пользователь создан'); return;
       } catch (e) { formErr = e.code === 'auth/email-already-in-use' ? 'Такой логин уже есть' : e.code === 'auth/weak-password' ? 'Слишком простой пароль' : 'Ошибка: ' + (e.message || e); }
     }
     render();
   },
-  async addMachine() { const v = $('#newMachine').value.trim(); if (!v) return; await B.save('machines', null, { name: v }); },
-  async seedMachines() { for (const n of SEED_MACHINES) await B.save('machines', null, { name: n }); },
-  async delMachine(id) { if (confirm('Удалить станок из списка?')) await B.remove('machines', id); },
+  async addMachine() { const v = $('#newMachine').value.trim(); if (!v) return; const id = await B.save('machines', null, { name: v }); await audit('create', 'machine', id, v, []); },
+  async seedMachines() { for (const n of SEED_MACHINES) await B.save('machines', null, { name: n }); await audit('create', 'machine', '', 'стандартный список (' + SEED_MACHINES.length + ' шт.)', []); },
+  async delMachine(id) { if (!confirm('Удалить станок из списка?')) return; const m = S.machines.find(x => x.id === id); await B.remove('machines', id); await audit('delete', 'machine', id, m ? m.name : '', []); },
   async createLaunch() {
     const projId = $('#lnProj').value, qty = parseInt($('#lnQty').value) || 0;
     const pri = $('#lnPri') ? $('#lnPri').value : 'normal';
@@ -1421,7 +1665,11 @@ const ACT = {
       const newTotal = it.qtyPer * d.qty;
       return Object.assign({}, it, { qtyTotal: newTotal });
     });
+    const dlVal = $('#lnDeadline') ? $('#lnDeadline').value : '';
+    const nd = dlVal ? new Date(dlVal).getTime() : 0;
+    if (nd && (!d.deadline || nd < d.deadline)) d.deadline = nd;
     await B.save('launches', dupId, d);
+    await audit('merge', 'launch', dupId, ttlLaunch(d), auditDiff('launch', dup, d), '+' + qty + ' шт');
     toast('Объединено: ' + oldQty + ' + ' + qty + ' = ' + d.qty + ' шт');
     location.hash = '#/launch/' + dupId;
   },
@@ -1502,18 +1750,52 @@ const ACT = {
     if (!confirm('Завершить запуск? Он переедет в «Готовые».')) return;
     const l = S.launches.find(x => x.id === id); if (!l) return;
     const d = clone(l); d.status = 'done'; d.finished = Date.now();
-    await B.save('launches', id, d); toast('Запуск завершён');
+    await B.save('launches', id, d); await audit('finish', 'launch', id, ttlLaunch(d), []); toast('Запуск завершён');
   },
   async reopenLaunch(id) {
     const l = S.launches.find(x => x.id === id); if (!l) return;
     const d = clone(l); d.status = 'active'; delete d.finished;
-    await B.save('launches', id, d); toast('Запуск возвращён в работу');
+    await B.save('launches', id, d); await audit('reopen', 'launch', id, ttlLaunch(d), []); toast('Запуск возвращён в работу');
   },
   setJournalPeriod(p) { journalPeriod = p; render(); },
+  setAuditPeriod(p) { auditState.period = p; render(); },
+  reloadAudit() { auditState.rows = null; render(); },
+  moreAudit() { auditState.limit += 300; loadAudit(); },
+  toggleObjAudit(id) {
+    if (openObjAudit.has(id)) openObjAudit.delete(id);
+    else { openObjAudit.add(id); if (!objAudit[id]) loadObjAudit(id); }
+    render();
+  },
+  async acceptTime(key) {
+    const rec = partById(draft && draft.id); if (!rec) return;
+    const sug = timeSuggestions(rec).find(x => x.key === key); if (!sug) return;
+    const n = clone(rec); delete n.id;
+    const su = n[sug.arrKey][sug.i], from = su.time, sec = Math.round(sug.time * 60), now = Date.now();
+    su.time = sec / 60; su.timeSec = sec; su.timeAck = now;
+    n.timeLog = (n.timeLog || []).concat([{ key, from: from == null ? '' : from, to: su.time, ts: now, by: S.me.name || S.me.login || '', src: 'report', reportBy: sug.who || '', launchId: sug.launchId || '' }]);
+    stamp(n);
+    await B.save('parts', rec.id, n);
+    const dsu = (draft[sug.arrKey] || [])[sug.i]; if (dsu) { dsu.time = su.time; dsu.timeSec = sec; dsu.timeAck = now; }
+    draft.timeLog = n.timeLog;
+    await audit('update', 'part', rec.id, ttlPart(rec), [{ f: sug.label + ': время', a: from === '' || from == null ? '—' : fmtT(tMin(from)), b: fmtT(su.time) }], 'из отчёта: ' + (sug.who || ''));
+    toast('Время записано в карточку'); render();
+  },
+  async dismissTime(key) {
+    const rec = partById(draft && draft.id); if (!rec) return;
+    const ref = setupRef(rec, key); if (!ref || !ref.su) return;
+    const n = clone(rec); delete n.id; const now = Date.now();
+    n[ref.arrKey][ref.i].timeAck = now;
+    await B.save('parts', rec.id, n);
+    const dsu = (draft[ref.arrKey] || [])[ref.i]; if (dsu) dsu.timeAck = now;
+    toast('Оставлено прежнее время'); render();
+  },
   async delReport(id) {
     const r = S.reports.find(x => x.id === id); if (!r || !canDelReport(r)) return;
     if (!confirm('Удалить этот отчёт? Прогресс по запуску уменьшится на ' + repPieces(r) + ' шт.')) return;
-    try { await B.remove('reports', id); toast('Отчёт удалён'); } catch (e) { toast('Не удалось удалить: нет прав'); }
+    try { await B.remove('reports', id); } catch (e) { toast('Не удалось удалить: нет прав'); return; }
+    const l = S.launches.find(x => x.id === r.launchId);
+    await audit('delete', 'report', r.launchId, (l ? ttlLaunch(l) : 'запуск удалён'), (r.entries || []).map(e => ({ f: ttlPart(partById(e.partId)) + ' · ' + stageKeyLabel(e.partId, e.stageKey), a: e.done + ' шт', b: '—' })), 'отчёт ' + (r.userName || '') + ' от ' + dayTitle(repDay(r)).toLowerCase() + (r.created ? ' ' + hhmm(r.created) : ''));
+    toast('Отчёт удалён');
   }
 };
 
@@ -1561,8 +1843,20 @@ document.addEventListener('change', e => {
     return;
   }
   if (t.dataset.u) return userChange(t);
-  if (t.dataset.m) { const m = S.machines.find(x => x.id === t.dataset.m); if (m && t.value.trim()) B.save('machines', m.id, { name: t.value.trim() }); }
+  if (t.dataset.m) { const m = S.machines.find(x => x.id === t.dataset.m); if (m && t.value.trim() && t.value.trim() !== m.name) { B.save('machines', m.id, { name: t.value.trim() }); audit('update', 'machine', m.id, t.value.trim(), [{ f: 'название', a: m.name, b: t.value.trim() }]); } }
+  if (t.dataset.ln) return launchChange(t);
+  if (t.dataset.af) { auditState[t.dataset.af] = t.value; render(); }
 });
+async function launchChange(t) {
+  const l = S.launches.find(x => x.id === t.dataset.ln); if (!l || !can('launches', 2)) return;
+  const n = clone(l); delete n.id;
+  if (t.dataset.f === 'deadline') n.deadline = t.value ? new Date(t.value).getTime() : '';
+  else if (t.dataset.f === 'priority') n.priority = t.value;
+  else return;
+  await B.save('launches', l.id, n);
+  await audit('update', 'launch', l.id, ttlLaunch(n), auditDiff('launch', l, n));
+  toast('Сохранено');
+}
 async function userChange(t) {
   const u = S.users.find(x => x.id === t.dataset.u); if (!u) return;
   const n = clone(u); delete n.id; n.perms = n.perms || {};
@@ -1572,7 +1866,9 @@ async function userChange(t) {
   else if (f === 'tpl') { if (!TPL[t.value]) return; n.perms = clone(TPL[t.value].perms); if (TPL[t.value].sections) n.sections = clone(TPL[t.value].sections); }
   else if (f.startsWith('perms.')) n.perms[f.slice(6)] = +t.value;
   else if (f.startsWith('sections.')) { n.sections = n.sections || {}; n.sections[f.slice(9)] = t.checked; }
-  await B.save('users', u.id, n); toast('Сохранено');
+  await B.save('users', u.id, n);
+  await audit('update', 'user', u.id, ttlUser(n), auditDiff('user', u, n));
+  toast('Сохранено');
 }
 window.addEventListener('hashchange', () => { listQuery = ''; render(); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'lg' || e.target.id === 'pw')) ACT.login(); });

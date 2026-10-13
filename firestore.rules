@@ -68,6 +68,13 @@ service cloud.firestore {
             && resource.data.created > request.time.toMillis() - 86400000);
     }
 
+    // Журнал действий: пишет любой вошедший только от своего имени; менять и удалять нельзя никому
+    match /audit/{id} {
+      allow read: if active();
+      allow create: if active() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     match /{document=**} { allow read, write: if false; }
   }
 }
