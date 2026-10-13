@@ -62,7 +62,10 @@ service cloud.firestore {
     match /reports/{id} {
       allow read: if active();
       allow create, update: if lvl('reports') >= 2;
-      allow delete: if lvl('reports') >= 3;
+      // удалять: руководитель — любые; автор — свой отчёт в течение суток (ошибся при вводе)
+      allow delete: if lvl('reports') >= 3
+        || (lvl('reports') >= 2 && resource.data.userId == request.auth.uid
+            && resource.data.created > request.time.toMillis() - 86400000);
     }
 
     match /{document=**} { allow read, write: if false; }

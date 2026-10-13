@@ -1,7 +1,7 @@
 (function () {
 'use strict';
 const B = window.Backend;
-const VER = 'v9';
+const VER = 'v10';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -251,24 +251,48 @@ function partHasNewChanges(partId) {
 function historySection(p) {
   const entries = partReportEntries(p.id);
   if (!entries.length) return '';
-  const hasNew = partHasNewChanges(p.id);
-  const machineById = id => { const m = S.machines.find(x => x.id === id); return m ? m.name : id; };
-  const fmtDate = ts => { if (!ts) return '—'; const d = new Date(ts); return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }); };
-  const stageLabel = key => {
-    if (key.startsWith('setup_')) return 'Сетап ' + (parseInt(key.split('_')[1]) + 1);
-    if (key.startsWith('finish_')) return 'Чист. сетап ' + (parseInt(key.split('_')[1]) + 1);
-    if (key.startsWith('lock_')) return 'Слесарка ' + (parseInt(key.split('_')[1]) + 1);
-    if (key === 'harden') return 'Закалка';
-    if (key.startsWith('coat_')) return 'Покрытие ' + (parseInt(key.split('_')[1]) + 1);
-    return key;
-  };
-  return `<div class="card hist-card"><h2>История отчётов${hasNew ? ' <span class="hist-new-badge">новое</span>' : ''}${hasNew ? ` <button class="link hist-seen-btn" data-act="markChangesSeen" data-arg="${p.id}">отметить прочитанным</button>` : ''}</h2>
+  const hasNew = partHasNewChanges(p.id), canSeen = can('catalog', 2);
+  const when = ts => ts ? dayTitle(localDay(ts)) + ' ' + hhmm(ts) : '—';
+  return `<div class="card hist-card"><h2>История отчётов${hasNew ? ' <span class="hist-new-badge">новое</span>' : ''}${hasNew && canSeen ? ` <button class="link hist-seen-btn" data-act="markChangesSeen" data-arg="${p.id}">отметить прочитанным</button>` : ''}</h2>
     <div class="hist-list">${entries.slice(0, 20).map(e => `<div class="hist-entry${(e.created || 0) > (p.seenChanges || 0) ? ' hist-unseen' : ''}">
-      <div class="hist-meta"><span class="hist-date">${fmtDate(e.created)}</span><span class="hist-user">${esc(e.userName || '—')}</span>${e.launchName ? `<span class="hist-launch">${esc(e.launchName)}</span>` : ''}</div>
-      <div class="hist-stage">${stageLabel(e.stageKey)}${e.done ? ' · ' + e.done + ' шт' : ''}</div>
-      <div class="hist-details">${e.time ? '<span>⏱ ' + esc(String(e.time)) + ' мин</span>' : ''}${e.machine ? '<span>🔧 ' + esc(machineById(e.machine)) + '</span>' : ''}${e.program ? '<span>📄 ' + esc(e.program) + '</span>' : ''}${e.note ? '<span>💬 ' + esc(e.note) + '</span>' : ''}</div>
+      <div class="hist-meta"><span class="hist-date">${when(e.created)}</span><span class="hist-user">${esc(e.userName || '—')}</span>${e.launchName ? `<span class="hist-launch">${esc(e.launchName)}</span>` : ''}</div>
+      <div class="hist-stage">${esc(stageKeyLabel(p.id, e.stageKey))}${e.done ? ' · ' + e.done + ' шт' : ''}</div>
+      ${entryDetails(e)}
     </div>`).join('')}${entries.length > 20 ? `<div class="muted" style="padding:6px 0">ещё ${entries.length - 20} записей…</div>` : ''}</div></div>`;
 }
+// Сводка по запускам: для каждого станочного этапа — норма из карточки и фактические данные по каждому запуску
+function launchSummarySection(p) {
+  const launches = S.launches.filter(l => (l.items || []).some(it => it.partId === p.id)).sort((a, b) => (a.created || 0) - (b.created || 0));
+  if (!launches.length) return '';
+  const stages = partStages(p).filter(st => st.key.startsWith('setup_') || st.key.startsWith('finish_'));
+  // факт по запуску и этапу: последнее непустое значение каждого поля + кто
+  const fact = {};
+  S.reports.slice().sort((a, b) => repTs(a) - repTs(b)).forEach(r => (r.entries || []).forEach(e => {
+    if (e.partId !== p.id) return;
+    const k = r.launchId + '|' + e.stageKey, f = fact[k] = fact[k] || { done: 0 };
+    f.done += e.done || 0;
+    if (e.time) f.time = e.time; if (e.machine) f.machine = e.machine; if (e.program) f.program = e.program; if (e.note) f.note = e.note;
+    if (e.time || e.machine || e.program) f.who = r.userName;
+  }));
+  const norm = st => { const m = /^(setup|finish)_(\d+)$/.exec(st.key); const su = m ? (m[1] === 'setup' ? p.setups : p.finishSetups || [])[+m[2]] : null; return su || {}; };
+  const dev = (t, n) => { if (!t || !n) return ''; const d = (t - n) / n; if (Math.abs(d) < 0.05) return ''; return `<span class="sm-dev ${d > 0 ? 'sm-slow' : 'sm-fast'}">${d > 0 ? '+' : '−'}${Math.round(Math.abs(d) * 100)}%</span>`; };
+  const tm = x => { const v = typeof x === 'number' ? x : parseT(x); return v ? fmtT(v) : ''; };
+  const rows = stages.map(st => {
+    const n = norm(st), nt = typeof n.time === 'number' ? n.time : parseT(n.time);
+    const lrows = launches.map(l => {
+      const f = fact[l.id + '|' + st.key]; const it = (l.items || []).find(i => i.partId === p.id);
+      if (!f) return `<tr><td>${launchCell(l)}</td><td>${it ? it.qtyTotal : ''}</td><td colspan="5" class="muted">нет отчётов</td></tr>`;
+      return `<tr><td>${launchCell(l)}</td><td>${f.done}/${it ? it.qtyTotal : '?'}</td><td class="mono">${tm(f.time) || '—'} ${dev(f.time, nt)}</td><td>${esc(machineName(f.machine) || '—')}${f.machine && n.machine && f.machine !== n.machine ? ' <span class="sm-diff" title="Отличается от карточки">≠</span>' : ''}</td><td class="mono">${esc(f.program || '—')}${f.program && n.program && f.program !== n.program ? ' <span class="sm-diff" title="Отличается от карточки">≠</span>' : ''}</td><td>${esc(f.who || '—')}</td><td>${esc(f.note || '')}</td></tr>`;
+    }).join('');
+    return `<tr class="sm-stage"><td colspan="7">${esc(st.label)}</td></tr>
+      <tr class="sm-norm"><td>по карточке</td><td></td><td class="mono">${tm(n.time) || '—'}</td><td>${esc(machineName(n.machine) || '—')}</td><td class="mono">${esc(n.program || '—')}</td><td></td><td>${esc(n.note || '')}</td></tr>${lrows}`;
+  }).join('');
+  if (!rows) return '';
+  return `<div class="card"><h2>Сводка по запускам</h2>
+    <div class="sm-wrap"><table class="sm-tbl"><thead><tr><th>Запуск</th><th>Сделано</th><th>Время</th><th>Станок</th><th>Программа</th><th>Кто</th><th>Примечание</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted">Время — на одну деталь, последнее из отчётов. Процент — отклонение от времени в карточке: <span class="sm-slow">красный</span> — дольше, <span class="sm-fast">зелёный</span> — быстрее. Знак ≠ — станок или программа не совпадают с карточкой.</p></div>`;
+}
+function launchCell(l) { return `<a href="#/launch/${l.id}">${l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '—'}</a>${l.status === 'done' ? ' <span class="muted">готов</span>' : ''}<div class="muted sm-qty">тираж ${l.qty} шт</div>`; }
 function viewToggleBtn(section) {
   const isFull = viewMode[section] === 'full';
   return `<button class="chip view-toggle" data-act="toggleView" data-arg="${section}" title="${isFull ? 'Компактный вид' : 'Подробный вид'}">${isFull ? '⊟ Кратко' : '⊞ Подробно'}</button>`;
@@ -460,7 +484,7 @@ function viewPart() {
     ${(p.steps || []).map((s, i) => `<div class="step"><label>Операция ${i + 1}<input data-bind="steps.${i}" value="${esc(s)}" ${dis}></label>${dis ? '' : `<button class="x danger" data-act="delStep" data-arg="${i}">✕</button>`}${isCoatName(s) && !dis ? `<div class="warn" style="grid-column:1/-1;margin:0">Это покрытие, а не слесарная операция. <button class="link" data-act="moveCoat" data-arg="${i}">Перенести в «Покрытие»</button></div>` : ''}</div>`).join('') || '<p class="muted">Нет.</p>'}
     ${dis ? '' : '<button data-act="addStep">+ Операция</button>'}</div>
   ${used.length ? `<div class="card"><h2>Входит в изделия</h2>${used.map(u => `<a href="#/project/${u.id}">${esc(u.name)}</a>`).join('<br>')}</div>` : ''}
-  ${p.id ? historySection(p) : ''}
+  ${p.id ? launchSummarySection(p) + historySection(p) : ''}
   ${formErr ? `<div class="err">${esc(formErr)}</div>` : ''}
   <div class="bar">${dis ? '' : '<button class="primary" data-act="savePart">Сохранить</button>'}
     ${p.id && can('catalog', 3) ? '<button class="danger" data-act="delPart">Удалить</button>' : ''}</div>`;
@@ -520,7 +544,7 @@ function viewTeam() {
 /* ───────── Рендер ───────── */
 const NAV = [['projects', 'Изделия', () => can('catalog', 1)], ['parts', 'Детали', () => can('catalog', 1)],
   ['progress', 'В работе', () => can('launches', 1)], ['done', 'Готовые', () => can('launches', 1)],
-  ['report', 'Отчёт', () => can('reports', 2)], ['locksmith', 'Слесарка', () => can('launches', 1)],
+  ['reports', 'Отчёты', () => can('reports', 1)],
   ['calc', 'Калькулятор', () => true], ['team', 'Команда', () => S.me && S.me.isAdmin]];
 function render() { renderMain(); setTimeout(hydrate, 0); }
 function renderMain() {
@@ -558,8 +582,8 @@ function renderMain() {
   else if (sec === 'done') view.innerHTML = viewLaunches('done');
   else if (sec === 'launch') { view.innerHTML = viewLaunch(r.seg[1]); return; }
   else if (sec === 'launch-new') { view.innerHTML = viewLaunchNew(); return; }
-  else if (sec === 'report') { view.innerHTML = viewReport(); return; }
-  else if (sec === 'locksmith') { view.innerHTML = viewLocksmith(); return; }
+  else if (sec === 'reports') { view.innerHTML = viewJournal(r.seg[1]); return; }
+  else if (sec === 'report' || sec === 'locksmith') { location.replace('#/progress'); return; }
   else if (sec === 'print') { view.innerHTML = viewPrint(r.seg[1]); return; }
   else view.innerHTML = viewStub('Не найдено', 'Такой страницы нет.');
 }
@@ -778,7 +802,7 @@ function reportPanel(l, done) {
             ${progressBar(st.done, st.qtyTotal)}
             ${editable ? `<div class="rpt-fields">
               <label>Сделано, шт<input class="rpt-done" type="number" min="0" max="${st.remain}" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" data-sec="${secKey}" inputmode="numeric" value="0"></label>
-              ${isFull && isMech ? `<label>Время на деталь, мин<input class="rpt-time" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder="0" inputmode="decimal"></label>
+              ${isFull && isMech ? `<label>Время (чч:мм:сс)<input class="rpt-time tmask" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder="00:00:00" inputmode="numeric" autocomplete="off"></label>
               <label>Станок<select class="rpt-machine" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}"><option value="">—</option>${machOpts}</select></label>
               <label>Программа<input class="rpt-prog" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder=""></label>` : ''}
               ${isFull ? `<label>Примечание<input class="rpt-note" type="text" data-li="${l.id}" data-pi="${st.partId}" data-sk="${st.key}" placeholder=""></label>` : ''}
@@ -830,73 +854,87 @@ function partStages(pt) {
   if (work.coats.length) work.coats.forEach((c, ci) => stages.push({ key: 'coat_' + ci, label: c, group: 'Покрытие' }));
   return stages;
 }
-function viewReport() {
-  if (!can('reports', 2)) return viewStub('Нет доступа', 'У вас нет прав на создание отчётов.');
-  const activeLaunches = S.launches.filter(l => l.status === 'active');
-  // собрать все детали из активных запусков
-  const rows = [];
-  activeLaunches.forEach(l => {
-    const { done } = launchProgress(l);
-    (l.items || []).forEach(it => {
-      const pt = partById(it.partId);
-      if (!pt) return;
-      const stages = partStages(pt);
-      const pending = stages.filter(st => (done[it.partId + '_' + st.key] || 0) < it.qtyTotal);
-      if (!pending.length) return;
-      rows.push({ launch: l, it, pt, stages, pending, done });
-    });
-  });
-  return `<div class="card"><h2>Вечерний отчёт</h2>
-    ${rows.length ? rows.map(r => {
-      const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
-      return `<div class="rp-row">
-        <div class="rp-part pi">${thumbHTML(r.pt.drawing, !!r.pt.drawing)}<div class="tx2"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
-          <div class="s">${esc(r.launch.projectName)} · <b>${r.it.qtyTotal} штук</b></div></div></div>
-        ${noteHTML}
-        ${r.pending.map(st => {
-          const d = r.done[r.it.partId + '_' + st.key] || 0;
-          const remain = r.it.qtyTotal - d;
-          return `<div class="rp-stage">
-            <div class="s">${esc(st.label)} · осталось ${remain} шт</div>
-            ${progressBar(d, r.it.qtyTotal)}
-            <label>Сделано, шт<input class="rp-done" type="number" min="0" max="${remain}" data-li="${r.launch.id}" data-pi="${r.it.partId}" data-sk="${st.key}" inputmode="numeric" value="0"></label>
-          </div>`;
-        }).join('')}
-      </div>`;
-    }).join('') + `<button class="primary" data-act="submitReport" style="margin-top:16px">Сохранить отчёт</button>`
-    : '<p class="muted">Все детали по активным запускам готовы, либо активных запусков нет.</p>'}</div>`;
+/* ───────── Журнал отчётов ───────── */
+let journalPeriod = 'week';
+const JP = [['today', 'Сегодня'], ['week', '7 дней'], ['month', '30 дней'], ['all', 'Всё']];
+const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const p2 = n => String(n).padStart(2, '0');
+function localDay(ts) { const d = new Date(ts); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+function repTs(r) { return r.created || (r.date ? Date.parse(r.date + 'T12:00:00') : 0); }
+function repDay(r) { return r.created ? localDay(r.created) : (r.date || ''); }
+function dayTitle(day) { const [y, m, d] = day.split('-').map(Number); const dt = new Date(y, m - 1, d); const today = localDay(Date.now()), yest = localDay(Date.now() - 864e5); return (day === today ? 'Сегодня, ' : day === yest ? 'Вчера, ' : WD[dt.getDay()] + ', ') + p2(d) + '.' + p2(m) + '.' + y; }
+function hhmm(ts) { const d = new Date(ts); return p2(d.getHours()) + ':' + p2(d.getMinutes()); }
+function inPeriod(r, per) {
+  if (per === 'all') return true;
+  const t = repTs(r), now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (per === 'today') return t >= start;
+  return t >= start - (per === 'week' ? 6 : 29) * 864e5;
 }
-function viewLocksmith() {
-  const activeLaunches = S.launches.filter(l => l.status === 'active');
-  const rows = [];
-  activeLaunches.forEach(l => {
-    const { done } = launchProgress(l);
-    (l.items || []).forEach(it => {
-      const pt = partById(it.partId);
-      if (!pt) return;
-      // все этапы кроме сетапов: слесарка, закалка, покрытие
-      const stages = partStages(pt).filter(st => !st.key.startsWith('setup_'));
-      const pending = stages.filter(st => (done[it.partId + '_' + st.key] || 0) < it.qtyTotal)
-        .map(st => ({ ...st, done: done[it.partId + '_' + st.key] || 0, remain: it.qtyTotal - (done[it.partId + '_' + st.key] || 0) }));
-      if (!pending.length) return;
-      rows.push({ launch: l, it, pt, pending });
-    });
-  });
-  return `<div class="card"><h2>Слесарка / Закалка / Покрытие</h2>
-    ${rows.length ? rows.map(r => {
-      const noteHTML = r.pt.notePri === 'high' ? `<div class="s s-high">⚠ ${esc(r.pt.note)}</div>` : '';
-      return `<div class="lk-row">
-        <div class="lk-hdr pi">${thumbHTML(r.pt.drawing, !!r.pt.drawing)}<div class="tx2"><b>${r.it.partArt ? esc(r.it.partArt) + ' ' : ''}${esc(r.it.partName)}</b>
-          <div class="s">${esc(r.launch.projectName)} · <b>${r.it.qtyTotal} штук</b></div></div></div>
-        ${noteHTML}
-        ${r.pending.map(o => `<div class="lk-op">
-          <span>${esc(o.label)}</span> <span class="muted">· ${o.group || ''} · осталось ${o.remain} шт</span>
-          ${progressBar(o.done, r.it.qtyTotal)}
-          <label>Сделано<input class="lk-done" type="number" min="0" max="${o.remain}" data-li="${r.launch.id}" data-pi="${r.it.partId}" data-sk="${o.key}" inputmode="numeric" value="0"></label>
-        </div>`).join('')}
-      </div>`;
-    }).join('') + `<button class="primary" data-act="submitLocksmith" style="margin-top:16px">Сохранить</button>`
-    : '<p class="muted">Нет незавершённых операций (слесарка, закалка, покрытие).</p>'}</div>`;
+function repPieces(r) { return (r.entries || []).reduce((a, e) => a + (e.done || 0), 0); }
+function stageKeyLabel(partId, key) {
+  const pt = partById(partId); const st = pt ? partStages(pt).find(s => s.key === key) : null;
+  if (st) return st.label;
+  const n = parseInt(String(key).split('_')[1]) + 1;
+  if (key.startsWith('setup_')) return 'сетап ' + n; if (key.startsWith('finish_')) return 'чистовой сетап ' + n;
+  if (key.startsWith('lock_')) return 'слесарка ' + n; if (key === 'harden') return 'закалка'; if (key.startsWith('coat_')) return 'покрытие ' + n;
+  return key;
+}
+function entryDetails(e) {
+  const parts = [];
+  if (e.time) parts.push('⏱ ' + esc(fmtT(e.time)));
+  if (e.machine) parts.push('🔧 ' + esc(machineName(e.machine) || e.machine));
+  if (e.program) parts.push('📄 ' + esc(e.program));
+  if (e.note) parts.push('💬 ' + esc(e.note));
+  return parts.length ? `<div class="hist-details">${parts.map(x => `<span>${x}</span>`).join('')}</div>` : '';
+}
+function canDelReport(r) { return can('reports', 3) || (r.userId === S.me.uid && can('reports', 2) && Date.now() - (r.created || 0) < 864e5); }
+function journalSeeAll() { return !!(S.me.isAdmin || can('reports', 3)); }
+function periodChips() { return `<div class="sort-bar">${JP.map(([k, n]) => `<button class="chip${journalPeriod === k ? ' active' : ''}" data-act="setJournalPeriod" data-arg="${k}">${n}</button>`).join('')}</div>`; }
+function viewJournal(uid) {
+  if (!can('reports', 1)) return viewStub('Нет доступа', 'У вас нет доступа к отчётам.');
+  const all = journalSeeAll();
+  if (!uid && !all) uid = S.me.uid;
+  if (uid && uid !== S.me.uid && !all) return viewStub('Нет доступа', 'Можно смотреть только свой журнал.');
+  return uid ? viewPersonalJournal(uid, all) : viewJournalList();
+}
+function viewJournalList() {
+  const per = journalPeriod, today = localDay(Date.now());
+  const people = {};
+  S.users.forEach(u => { if (u.active === false) return; const sec = u.sections || {}; if (u.isAdmin || sec.mech || sec.lock) people[u.id] = { id: u.id, name: u.name || u.login, sec, reps: [] }; });
+  S.reports.forEach(r => { if (!r.userId) return; if (!people[r.userId]) { const u = S.users.find(x => x.id === r.userId); people[r.userId] = { id: r.userId, name: (u && (u.name || u.login)) || r.userName || '—', sec: (u && u.sections) || {}, reps: [] }; } people[r.userId].reps.push(r); });
+  const list = Object.values(people).map(p => {
+    const inP = p.reps.filter(r => inPeriod(r, per));
+    const todayPcs = p.reps.filter(r => repDay(r) === today).reduce((a, r) => a + repPieces(r), 0);
+    const last = p.reps.reduce((a, r) => Math.max(a, repTs(r)), 0);
+    return { ...p, count: inP.length, pcs: inP.reduce((a, r) => a + repPieces(r), 0), days: new Set(inP.map(repDay)).size, todayPcs, last };
+  }).sort((a, b) => b.last - a.last || byName(a, b));
+  return `<h1>Отчёты</h1>${periodChips()}
+    <div class="list jr-people">${list.map(p => `<a class="item jr-person" href="#/reports/${p.id}"><div class="tx">
+      <div class="t">${esc(p.name)}${p.sec.mech ? '<span class="jr-sec">мех</span>' : ''}${p.sec.lock ? '<span class="jr-sec">слес</span>' : ''}</div>
+      <div class="s">${p.count ? `отчётов: ${p.count} · деталей: ${p.pcs} шт · дней: ${p.days}` : '<span class="muted">за период отчётов нет</span>'}</div>
+      <div class="s">${p.todayPcs ? `<span class="jr-today">сегодня: ${p.todayPcs} шт</span>` : '<span class="jr-none">сегодня отчёта нет</span>'}${p.last ? ' · последний: ' + dayTitle(localDay(p.last)).toLowerCase() + ' ' + hhmm(p.last) : ''}</div>
+    </div></a>`).join('') || '<p class="muted">Сотрудников с правом на отчёты пока нет.</p>'}</div>`;
+}
+function viewPersonalJournal(uid, all) {
+  const u = S.users.find(x => x.id === uid);
+  const reps = S.reports.filter(r => r.userId === uid && inPeriod(r, journalPeriod)).sort((a, b) => repTs(b) - repTs(a));
+  const name = (u && (u.name || u.login)) || (reps[0] && reps[0].userName) || (uid === S.me.uid ? (S.me.name || S.me.login) : '—');
+  const days = {};
+  reps.forEach(r => { (days[repDay(r)] = days[repDay(r)] || []).push(r); });
+  const total = reps.reduce((a, r) => a + repPieces(r), 0);
+  return `${all ? '<a class="back" href="#/reports">← Все сотрудники</a>' : ''}<h1>${esc(name)}${uid === S.me.uid && all ? ' <span class="muted" style="font-size:15px;font-weight:400">(вы)</span>' : ''}</h1>
+    ${periodChips()}
+    <div class="jr-sum">Отчётов: <b>${reps.length}</b> · деталей: <b>${total} шт</b> · рабочих дней: <b>${Object.keys(days).length}</b></div>
+    ${Object.keys(days).sort().reverse().map(day => { const dr = days[day]; return `<div class="card jr-day">
+      <h2>${dayTitle(day)} <span class="muted jr-day-tot">${dr.reduce((a, r) => a + repPieces(r), 0)} шт</span></h2>
+      ${dr.map(r => { const l = S.launches.find(x => x.id === r.launchId); return `<div class="jr-rep">
+        <div class="jr-rep-hdr"><span class="hist-date">${r.created ? hhmm(r.created) : ''}</span>
+          ${l ? `<a href="#/launch/${l.id}">${esc((l.projectArt ? l.projectArt + ' ' : '') + l.projectName)}</a>${l.status === 'done' ? ' <span class="muted">(готов)</span>' : ''}` : '<span class="muted">запуск удалён</span>'}
+          ${canDelReport(r) ? `<button class="link danger jr-del" data-act="delReport" data-arg="${r.id}">удалить</button>` : ''}</div>
+        ${(r.entries || []).map(e => { const pt = partById(e.partId); return `<div class="jr-entry">
+          <div><b>${pt ? (pt.art ? esc(pt.art) + ' ' : '') + esc(pt.name) : '<span class="muted">деталь удалена</span>'}</b> · ${esc(stageKeyLabel(e.partId, e.stageKey))} · <b>${e.done} шт</b></div>
+          ${entryDetails(e)}</div>`; }).join('')}
+      </div>`; }).join('')}</div>`; }).join('') || '<div class="card muted">За выбранный период отчётов нет.</div>'}`;
 }
 function viewPrint(id) {
   const l = S.launches.find(x => x.id === id);
@@ -1266,7 +1304,7 @@ const ACT = {
     }
     lines.push('Онлайн: ' + navigator.onLine); out.textContent = lines.join('\n');
   },
-  async logout() { S.me = null; await B.logout(); },
+  async logout() { S.me = null; openReportLaunch = null; expandedReportStages.clear(); await B.logout(); },
   addSetup() { draft.setups.push({ type: '', machine: '', program: '', time: '', note: '' }); render(); },
   delSetup(i) { draft.setups.splice(i, 1); render(); },
   progFromArt(i) { draft.setups[i].program = draft.art || ''; render(); },
@@ -1455,7 +1493,7 @@ const ACT = {
       entries.push(entry);
     });
     if (!entries.length) { toast('Нечего сохранять'); return; }
-    const data = { launchId: id, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries };
+    const data = { launchId: id, date: localDay(Date.now()), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries };
     await B.save('reports', null, data);
     expandedReportStages.clear();
     toast('Отчёт сохранён'); render();
@@ -1471,40 +1509,11 @@ const ACT = {
     const d = clone(l); d.status = 'active'; delete d.finished;
     await B.save('launches', id, d); toast('Запуск возвращён в работу');
   },
-  async submitReport() {
-    const inputs = document.querySelectorAll('.rp-done');
-    const entries = [];
-    inputs.forEach(inp => {
-      const v = parseInt(inp.value) || 0;
-      if (v <= 0) return;
-      entries.push({ partId: inp.dataset.pi, stageKey: inp.dataset.sk, done: v, launchId: inp.dataset.li });
-    });
-    if (!entries.length) { toast('Нечего сохранять'); return; }
-    // группируем по запуску
-    const byLaunch = {};
-    entries.forEach(e => { (byLaunch[e.launchId] = byLaunch[e.launchId] || []).push(e); });
-    for (const [lid, ents] of Object.entries(byLaunch)) {
-      const data = { launchId: lid, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries: ents };
-      await B.save('reports', null, data);
-    }
-    toast('Отчёт сохранён'); render();
-  },
-  async submitLocksmith() {
-    const inputs = document.querySelectorAll('.lk-done');
-    const entries = [];
-    inputs.forEach(inp => {
-      const v = parseInt(inp.value) || 0;
-      if (v <= 0) return;
-      entries.push({ partId: inp.dataset.pi, stageKey: inp.dataset.sk, done: v, launchId: inp.dataset.li });
-    });
-    if (!entries.length) { toast('Нечего сохранять'); return; }
-    const byLaunch = {};
-    entries.forEach(e => { (byLaunch[e.launchId] = byLaunch[e.launchId] || []).push(e); });
-    for (const [lid, ents] of Object.entries(byLaunch)) {
-      const data = { launchId: lid, date: new Date().toISOString().slice(0, 10), userId: S.me.uid, userName: S.me.name || S.me.login, created: Date.now(), entries: ents };
-      await B.save('reports', null, data);
-    }
-    toast('Сохранено'); render();
+  setJournalPeriod(p) { journalPeriod = p; render(); },
+  async delReport(id) {
+    const r = S.reports.find(x => x.id === id); if (!r || !canDelReport(r)) return;
+    if (!confirm('Удалить этот отчёт? Прогресс по запуску уменьшится на ' + repPieces(r) + ' шт.')) return;
+    try { await B.remove('reports', id); toast('Отчёт удалён'); } catch (e) { toast('Не удалось удалить: нет прав'); }
   }
 };
 
