@@ -574,7 +574,7 @@ function viewLaunches(status) {
       const partsInfo = (l.items || []).map(it => {
         const pt = partById(it.partId);
         if (!pt) return '';
-        return `<div class="launch-part-info"><div class="lpi-hdr">${pt.drawing ? thumbHTML(pt.drawing) : ''}<div><b>${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</b> · ${it.qtyTotal} штук</div></div>${partLines(pt)}</div>`;
+        return `<div class="launch-part-info"><div class="lpi-hdr"><div><b>${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</b> · ${it.qtyTotal} штук</div></div>${partLines(pt)}</div>`;
       }).join('');
       return `<a class="item hasth launch-item" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
         <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div>

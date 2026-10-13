@@ -147,6 +147,7 @@ label.chk{display:flex;align-items:center;gap:6px;color:var(--ink)}
   .list a.item.hasth{flex-direction:column;align-items:stretch;gap:10px}
   .list .item .thumb{width:100%;height:auto;aspect-ratio:4/3;max-height:300px}
   .list .item .thumb.none{height:120px}
+  .launch-part-info .lpi-hdr .thumb{width:48px;height:36px;aspect-ratio:auto;max-height:none}
 }
 .pi .tx2>a{display:block;font-weight:600;margin-bottom:6px;color:var(--ink)}
 .pi .tx2>a .art{color:var(--acc)}
@@ -206,7 +207,7 @@ label.chk{margin:4px 0 2px}
 .launch-part-info{margin:8px 0 4px;padding:8px 10px;background:var(--bg);border-radius:8px;font-size:13px;line-height:1.45;overflow:hidden;word-wrap:break-word;overflow-wrap:break-word}
 .launch-part-info .s{margin:1px 0;overflow:hidden;text-overflow:ellipsis}
 .lpi-hdr{display:flex;align-items:center;gap:8px;margin-bottom:4px;min-width:0}
-.lpi-hdr .thumb{width:48px;height:36px;border-radius:4px;flex-shrink:0}
+.launch-part-info .lpi-hdr .thumb{width:48px;height:36px;border-radius:4px;flex-shrink:0;aspect-ratio:auto;max-height:none}
 .lpi-hdr>div{min-width:0;overflow:hidden}
 .lpi-hdr b{font-size:14px;word-wrap:break-word;overflow-wrap:break-word}
 .launch-item .tx{overflow:hidden;min-width:0;width:100%}
