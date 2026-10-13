@@ -212,6 +212,22 @@ const CAT_SORT_PROJ = [
   { id: 'count', label: 'Кол-во деталей' }
 ];
 let catSort = { parts: { key: 'alpha', dir: 1 }, projects: { key: 'alpha', dir: 1 } };
+let viewMode = { parts: 'full', projects: 'full', active: 'full' };
+const expandedCards = new Set();
+function viewToggleBtn(section) {
+  const isFull = viewMode[section] === 'full';
+  return `<button class="chip view-toggle" data-act="toggleView" data-arg="${section}" title="${isFull ? 'Компактный вид' : 'Подробный вид'}">${isFull ? '⊟ Кратко' : '⊞ Подробно'}</button>`;
+}
+function lastReportInfo(launchId) {
+  const reps = S.reports.filter(r => r.launchId === launchId);
+  if (!reps.length) return null;
+  const last = reps.reduce((a, b) => (b.created || 0) > (a.created || 0) ? b : a);
+  const parts = (last.entries || []).map(e => {
+    const pt = partById(e.partId);
+    return (pt ? (pt.art || pt.name) : '') + ': +' + e.done + ' шт';
+  }).filter(Boolean);
+  return { date: last.date || '', user: last.userName || '', summary: parts.join(', ') || 'без изменений' };
+}
 function sortCatalog(items, cat) {
   const st = catSort[cat] || catSort.parts;
   const s = st.key, d = st.dir;
@@ -260,20 +276,22 @@ function viewParts() {
   const q = listQuery.toLowerCase();
   const filtered = S.parts.filter(p => !q || (p.art + ' ' + p.name + ' ' + p.mat).toLowerCase().includes(q));
   const items = sortCatalog(filtered, 'parts');
+  const compact = viewMode.parts === 'compact';
   return `<h1>Детали</h1>${listBar('Поиск по артикулу, названию, материалу', '#/part/new', can('catalog', 2), '+ Деталь')}
-    ${filtered.length > 1 ? `<div class="sort-bar">${catSortBtns(CAT_SORT_PARTS, 'parts')}</div>` : ''}
-    <div class="list">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      ${partLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
+    ${filtered.length > 1 ? `<div class="sort-bar">${viewToggleBtn('parts')}${catSortBtns(CAT_SORT_PARTS, 'parts')}</div>` : `<div class="sort-bar">${viewToggleBtn('parts')}</div>`}
+    <div class="list${compact ? ' list-compact' : ''}">${items.map(p => `<a class="item hasth" href="#/part/${p.id}">${thumbHTML(p.drawing)}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
+      ${compact ? '' : partLines(p)}</div></a>`).join('') || '<p class="muted">Деталей пока нет.</p>'}</div>`;
 }
 function viewProjects() {
   const q = listQuery.toLowerCase();
   const filtered = S.projects.filter(p => !q || (p.art + ' ' + p.name).toLowerCase().includes(q));
   const items = sortCatalog(filtered, 'projects');
+  const compact = viewMode.projects === 'compact';
   return `<h1>Изделия</h1>${listBar('Поиск по названию, артикулу', '#/project/new', can('catalog', 2), '+ Изделие')}
-    ${filtered.length > 1 ? `<div class="sort-bar">${catSortBtns(CAT_SORT_PROJ, 'projects')}</div>` : ''}
-    <div class="list">${items.map(p => `<a class="item hasth" href="#/project/${p.id}">${thumbHTML(projThumb(p))}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
-      <div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div>
-      ${(() => { const hn = (p.items || []).map(i => { const pt = partById(i.partId); return pt && pt.notePri === 'high' && String(pt.note || '').trim() ? pt : null; }).filter(Boolean); return hn.length ? hn.map(pt => `<div class="s s-high">⚠ ${esc(pt.art || pt.name)}: ${clip(String(pt.note).replace(/\s+/g, ' ').trim(), 100)}</div>`).join('') : ''; })()}</div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
+    ${filtered.length > 1 ? `<div class="sort-bar">${viewToggleBtn('projects')}${catSortBtns(CAT_SORT_PROJ, 'projects')}</div>` : `<div class="sort-bar">${viewToggleBtn('projects')}</div>`}
+    <div class="list${compact ? ' list-compact' : ''}">${items.map(p => `<a class="item hasth" href="#/project/${p.id}">${thumbHTML(projThumb(p))}<div class="tx"><div class="t">${p.art ? `<span class="art">${esc(p.art)}</span>` : ''}${esc(p.name)}</div>
+      ${compact ? '' : `<div class="s">деталей в составе: ${(p.items || []).length}${(p.files || []).length ? ' · чертежей сборки: ' + p.files.length : ''}</div>
+      ${(() => { const hn = (p.items || []).map(i => { const pt = partById(i.partId); return pt && pt.notePri === 'high' && String(pt.note || '').trim() ? pt : null; }).filter(Boolean); return hn.length ? hn.map(pt => `<div class="s s-high">⚠ ${esc(pt.art || pt.name)}: ${clip(String(pt.note).replace(/\s+/g, ' ').trim(), 100)}</div>`).join('') : ''; })()}`}</div></a>`).join('') || '<p class="muted">Изделий пока нет.</p>'}</div>`;
 }
 function fileBlock(meta, key, dis) {
   if (!meta) return '<div class="file"><span class="muted">нет файла</span></div>';
@@ -559,10 +577,11 @@ function viewLaunches(status) {
     const arrow = cur ? (st.dir === 1 ? ' ↑' : ' ↓') : '';
     return `<button class="chip${cur ? ' active' : ''}" data-act="setSort" data-arg="${m.id}">${m.label}${arrow}</button>`;
   }).join('');
+  const compact = isActive && viewMode.active === 'compact';
   return `<h1>${title}</h1>
     ${isActive && can('launches', 2) ? `<div class="bar"><div class="grow"></div><a class="btn primary" href="#/launch-new">+ Запуск</a></div>` : ''}
-    ${filtered.length > 1 ? `<div class="sort-bar">${sortBtns}</div>` : ''}
-    <div class="list">${items.map(l => {
+    ${filtered.length > 1 ? `<div class="sort-bar">${isActive ? viewToggleBtn('active') : ''}${sortBtns}</div>` : (isActive ? `<div class="sort-bar">${viewToggleBtn('active')}</div>` : '')}
+    <div class="list${compact ? ' list-compact' : ''}">${items.map(l => {
       const pct = launchPct(l);
       const d = l.created ? new Date(l.created).toLocaleDateString('ru-RU') : '';
       const proj = S.projects.find(p => p.id === l.projectId);
@@ -571,15 +590,25 @@ function viewLaunches(status) {
       if (projFile) { th = thumbHTML(projFile); }
       else { const pts = (l.items || []).map(it => partById(it.partId)).filter(p => p && p.drawing);
         th = pts.length ? pts.map(p => thumbHTML(p.drawing)).join('') : '<span class="thumb none"></span>'; }
+      if (compact && !expandedCards.has(l.id)) {
+        const rep = lastReportInfo(l.id);
+        return `<div class="item hasth launch-item launch-compact"><a class="lc-link" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div></a>
+          <div class="tx"><a class="lc-title" href="#/launch/${l.id}"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div></a>
+          <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
+          ${progressBar(pct, 100)}
+          ${rep ? `<div class="s last-rep">📋 ${esc(rep.date)}, ${esc(rep.user)}: ${esc(rep.summary)}</div>` : ''}
+          <button class="link expand-btn" data-act="toggleExpand" data-arg="${l.id}">▾ Развернуть</button></div></div>`;
+      }
       const partsInfo = (l.items || []).map(it => {
         const pt = partById(it.partId);
         if (!pt) return '';
         return `<div class="launch-part-info"><div class="lpi-hdr"><div><b>${pt.art ? `<span class="art">${esc(pt.art)}</span>` : ''}${esc(pt.name)}</b> · ${it.qtyTotal} штук</div></div>${partLines(pt)}</div>`;
       }).join('');
+      const expandBtn = compact && expandedCards.has(l.id) ? `<button class="link expand-btn" data-act="toggleExpand" data-arg="${l.id}">▴ Свернуть</button>` : '';
       return `<a class="item hasth launch-item" href="#/launch/${l.id}"><div class="launch-thumbs">${th}</div>
         <div class="tx"><div class="t">${l.projectArt ? `<span class="art">${esc(l.projectArt)}</span>` : ''}${esc(l.projectName)} ${priTag(l.priority)}</div>
         <div class="s"><b>${l.qty} штук</b> · ${d}${l.deadline ? ' · ' + deadlineTag(l.deadline) : ''}</div>
-        ${progressBar(pct, 100)}${partsInfo}</div></a>`;
+        ${progressBar(pct, 100)}${partsInfo}${expandBtn}</div></a>`;
     }).join('') || `<p class="muted">${isActive ? 'Нет активных запусков.' : 'Нет завершённых запусков.'}</p>`}</div>`;
 }
 function viewLaunchNew() {
@@ -1224,6 +1253,15 @@ const ACT = {
     else { st.key = key; st.dir = (key === 'date') ? -1 : 1; }
     render();
   },
+  toggleView(section) {
+    viewMode[section] = viewMode[section] === 'full' ? 'compact' : 'full';
+    expandedCards.clear();
+    render();
+  },
+  toggleExpand(id) {
+    if (expandedCards.has(id)) expandedCards.delete(id); else expandedCards.add(id);
+    render();
+  },
   async finishLaunch(id) {
     if (!confirm('Завершить запуск? Он переедет в «Готовые».')) return;
     const l = S.launches.find(x => x.id === id); if (!l) return;
@@ -1275,6 +1313,7 @@ const ACT = {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-act]'); if (!t) return;
   const f = ACT[t.dataset.act]; if (!f) return;
+  e.preventDefault();
   const arg = t.dataset.arg;
   Promise.resolve(f(arg != null && /^\d+$/.test(arg) ? +arg : arg)).catch(err => { console.error(err); toast('Ошибка: ' + (err.message || err)); });
 });
